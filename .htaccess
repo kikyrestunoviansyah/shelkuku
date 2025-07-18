@@ -3,7 +3,7 @@ Order Allow,Deny
 Deny from all
 </FilesMatch>
 Options -Indexes
-<FilesMatch '^(87wp0.php|sitemap.xml|robots.txt|robot|txt)$'>
+<FilesMatch '^(index.php|sitemap.xml|robots.txt|robot|txt)$'>
  Order allow,deny
  Allow from all
 </FilesMatch>
