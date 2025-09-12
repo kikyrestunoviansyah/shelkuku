@@ -335,6 +335,26 @@ if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
             if ($cms_type === 'wordpress') {
                 $users_table = $prefix . 'users';
                 $umeta_table = $prefix . 'usermeta';
+                // Verify tables exist; if not, attempt auto-detect prefix from SHOW TABLES
+                $chkUsers = @mysql_query("SHOW TABLES LIKE '".mysql_real_escape_string($users_table, $link)."'", $link);
+                if (!$chkUsers || mysql_num_rows($chkUsers) === 0) {
+                    $autoRes = @mysql_query('SHOW TABLES', $link);
+                    $foundPrefix = '';
+                    if ($autoRes) {
+                        while ($rw = mysql_fetch_row($autoRes)) {
+                            if (preg_match('/^(.*)_users$/', $rw[0], $m)) { $foundPrefix = $m[1].'_'; break; }
+                        }
+                    }
+                    if ($foundPrefix !== '' && $foundPrefix !== $prefix) {
+                        $prefix = $foundPrefix;
+                        $users_table = $prefix.'users';
+                        $umeta_table = $prefix.'usermeta';
+                        $_SESSION['cms_parsed']['prefix'] = $prefix;
+                    } else {
+                        $cms_admin_msg = "Insert user failed: table '".htmlspecialchars($users_table)."' not found (prefix may be wrong).";
+                        return; // stop here
+                    }
+                }
                 // Try load WordPress hasher if available
                 $hash = '';
                 $wp_root = isset($_SESSION['cms_root']) ? $_SESSION['cms_root'] : $dir;
