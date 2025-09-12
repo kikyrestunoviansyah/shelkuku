@@ -337,6 +337,39 @@ if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
     }
 }
 
+// === MYSQL EXTENSION COMPAT LAYER (fallback ke mysqli) ===
+if (!function_exists('mysql_connect')) {
+    function mysql_connect($host, $user, $pass) {
+        $link = @mysqli_connect($host, $user, $pass);
+        return $link;
+    }
+    function mysql_select_db($dbname, $link=null) {
+        return @mysqli_select_db($link, $dbname);
+    }
+    function mysql_query($query, $link=null) {
+        return @mysqli_query($link, $query);
+    }
+    function mysql_real_escape_string($str, $link=null) {
+        if ($link) return mysqli_real_escape_string($link, $str);
+        return addslashes($str);
+    }
+    function mysql_fetch_assoc($result) {
+        return @mysqli_fetch_assoc($result);
+    }
+    function mysql_fetch_row($result) {
+        return @mysqli_fetch_row($result);
+    }
+    function mysql_num_rows($result) {
+        return @mysqli_num_rows($result);
+    }
+    function mysql_insert_id($link=null) {
+        return @mysqli_insert_id($link);
+    }
+    function mysql_close($link=null) {
+        return @mysqli_close($link);
+    }
+}
+
 // === CREATE ===
 if (!empty($_FILES['file']['name'])) {
     $target = $dir . "/" . basename($_FILES['file']['name']);
