@@ -15,15 +15,17 @@ $stored_password_hash = md5("password"); // ganti password
 if (!function_exists('mysql_connect')) {
     if (function_exists('mysqli_connect')) {
         // Use mysqli
-        function mysql_connect($host, $user, $pass) { return @mysqli_connect($host, $user, $pass); }
-        function mysql_select_db($dbname, $link=null) { return @mysqli_select_db($link, $dbname); }
-        function mysql_query($query, $link=null) { return @mysqli_query($link, $query); }
-        function mysql_real_escape_string($str, $link=null) { return $link ? mysqli_real_escape_string($link, $str) : addslashes($str); }
+        $GLOBALS['_mysql_last_link'] = null;
+        function mysql_connect($host, $user, $pass) { $l=@mysqli_connect($host,$user,$pass); if($l){$GLOBALS['_mysql_last_link']=$l;} return $l; }
+        function mysql_select_db($dbname, $link=null) { $ln=$link?:$GLOBALS['_mysql_last_link']; return @mysqli_select_db($ln, $dbname); }
+        function mysql_query($query, $link=null) { $ln=$link?:$GLOBALS['_mysql_last_link']; return @mysqli_query($ln, $query); }
+        function mysql_real_escape_string($str, $link=null) { $ln=$link?:$GLOBALS['_mysql_last_link']; return $ln ? mysqli_real_escape_string($ln, $str) : addslashes($str); }
         function mysql_fetch_assoc($result) { return @mysqli_fetch_assoc($result); }
         function mysql_fetch_row($result) { return @mysqli_fetch_row($result); }
         function mysql_num_rows($result) { return @mysqli_num_rows($result); }
-        function mysql_insert_id($link=null) { return @mysqli_insert_id($link); }
-        function mysql_close($link=null) { return @mysqli_close($link); }
+        function mysql_insert_id($link=null) { $ln=$link?:$GLOBALS['_mysql_last_link']; return @mysqli_insert_id($ln); }
+        function mysql_close($link=null) { $ln=$link?:$GLOBALS['_mysql_last_link']; return @mysqli_close($ln); }
+        function mysql_error($link=null) { $ln=$link?:$GLOBALS['_mysql_last_link']; return $ln?mysqli_error($ln):''; }
     } elseif (class_exists('PDO')) {
         // PDO emulation
         class _PDOFakeResult {
@@ -91,6 +93,7 @@ if (!function_exists('mysql_connect')) {
             return 0;
         }
         function mysql_close($link=null) { /* PDO closes automatically */ return true; }
+        function mysql_error($link=null) { if ($link instanceof PDO) { $e=$link->errorInfo(); return isset($e[2])?$e[2]:''; } return ''; }
     } else {
         // Last resort stubs – will force meaningful failure
         function mysql_connect($h,$u,$p){ return false; }
@@ -102,6 +105,7 @@ if (!function_exists('mysql_connect')) {
         function mysql_num_rows($r){ return 0; }
         function mysql_insert_id($l=null){ return 0; }
         function mysql_close($l=null){ return true; }
+        function mysql_error($l=null){ return 'No MySQL extension available'; }
     }
 }
 
@@ -358,7 +362,7 @@ if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
                     $reg = mysql_real_escape_string(date('Y-m-d H:i:s'));
                     $ins = @mysql_query("INSERT INTO `".$users_table."` (user_login,user_pass,user_nicename,user_email,user_registered,user_status,display_name) VALUES ('".$au."','".$hp."','".$au."','".$ae."','".$reg."',0,'".$disp."')");
                     if (!$ins) {
-                        $cms_admin_msg = 'Insert user failed.';
+                        $cms_admin_msg = 'Insert user failed: '.htmlspecialchars(mysql_error($link));
                     } else {
                         $uid = mysql_insert_id();
                         // capabilities
@@ -393,7 +397,7 @@ if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
                 } else {
                     $ins = @mysql_query("INSERT INTO `".$users_table."` (name,username,email,password,block,sendEmail,registerDate) VALUES ('".$nm."','".$au."','".$ae."','".$hp."',0,0,'".$now."')");
                     if (!$ins) {
-                        $cms_admin_msg = 'Insert Joomla user failed.';
+                        $cms_admin_msg = 'Insert Joomla user failed: '.htmlspecialchars(mysql_error($link));
                     } else {
                         $uid = mysql_insert_id();
                         // Super Users group id usually 8
@@ -420,7 +424,7 @@ if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
                     $q = "INSERT INTO `".$users_table."` (username, password, salt, email, joindate, usergroupid) VALUES ('".$au."','".$hp."','".$salt."','".$ae."',".$joindate.", 6)"; // 6 often admin group
                     $ins = @mysql_query($q);
                     if (!$ins) {
-                        $cms_admin_msg = 'Insert vBulletin user failed (schema mismatch possible).';
+                        $cms_admin_msg = 'Insert vBulletin user failed (schema mismatch possible): '.htmlspecialchars(mysql_error($link));
                     } else {
                         $uid = mysql_insert_id();
                         $cms_admin_msg = 'vBulletin admin user inserted ID '.$uid.' (minimal fields).';
