@@ -801,12 +801,16 @@ if (!$disabled_funcs) {
     <title>File Manager & SQL Tool</title>
     <style>
         /* Base */
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background:#0b0f14; margin:0; }
-        .container { max-width:1100px; margin:0 auto; padding:16px; }
+    html, body { height:100%; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background:#0b0f14; margin:0; display:flex; flex-direction:column; }
+    .container { width:100%; margin:0; padding:18px 28px 40px; box-sizing:border-box; flex:1; display:flex; flex-direction:column; min-height:100vh; }
+    .content-area { flex:1; display:flex; flex-direction:column; gap:16px; }
+    /* Optional wrap for future sidebars */
+    .full-width-block { width:100%; }
         .header { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-radius:10px; background:#071018; border:1px solid rgba(255,255,255,0.03); margin-bottom:16px; }
         .header h1 { font-size:1.4rem; font-weight:600; color:#e6eef8; }
 
-        .nav-tabs { display:flex; gap:8px; margin-bottom:16px; }
+    .nav-tabs { display:flex; gap:8px; margin:0 0 16px; flex-wrap:wrap; }
         .nav-tab {
             padding:10px 16px; border-radius:8px; text-decoration:none; color:#bcd3ff; background:transparent;
             border:1px solid transparent; font-weight:500; transition:all .12s ease;
@@ -817,7 +821,7 @@ if (!$disabled_funcs) {
         .logout-btn { background:#ef4444; color:white; padding:8px 12px; border-radius:8px; text-decoration:none; }
         .logout-btn:hover { filter:brightness(.95); }
 
-        .card { background:#071420; border:1px solid rgba(255,255,255,0.03); border-radius:10px; padding:16px; margin-bottom:14px; }
+    .card { background:#071420; border:1px solid rgba(255,255,255,0.03); border-radius:12px; padding:18px 20px 20px; margin-bottom:14px; box-shadow:0 4px 18px -4px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.015); }
         .card h3 { color:#e6eef8; margin-bottom:12px; font-size:1.05rem; }
 
         .server-info { background:linear-gradient(180deg,#071420,#06121a); border:1px solid rgba(255,255,255,0.03); padding:12px; border-radius:10px; color:#cfe6ff; }
@@ -833,16 +837,18 @@ if (!$disabled_funcs) {
         .form-control { width:100%; padding:10px 12px; border-radius:8px; background:#03101a; color:#dbe7ff; border:1px solid rgba(255,255,255,0.03); }
         .form-control:focus { outline:none; box-shadow:0 6px 20px rgba(59,130,246,0.06); border-color:rgba(59,130,246,0.28); }
 
-        .table { width:100%; border-collapse:collapse; margin-top:12px; background:transparent; }
-        .table th, .table td { padding:10px 12px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.03); color:#cfe6ff; font-size:0.95rem; }
-        .table th { background:transparent; color:#9fc6ff; font-weight:700; text-transform:uppercase; font-size:0.8rem; }
-        .table tr:hover td { background:rgba(255,255,255,0.015); }
+    .table-wrapper { width:100%; overflow:auto; border:1px solid rgba(255,255,255,0.04); border-radius:10px; }
+    .table { width:100%; border-collapse:separate; border-spacing:0; background:transparent; }
+    .table th, .table td { padding:10px 14px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.04); color:#cfe6ff; font-size:0.9rem; }
+    .table th { position:sticky; top:0; background:#0c1825; backdrop-filter:blur(4px); color:#9fc6ff; font-weight:600; text-transform:uppercase; font-size:0.7rem; letter-spacing:0.05em; }
+    .table tr:last-child td { border-bottom:none; }
+    .table tr:hover td { background:rgba(59,130,246,0.06); }
 
         .alert { padding:12px; border-radius:8px; margin-bottom:12px; }
         .alert-success { background:rgba(16,185,129,0.06); color:#9ff3d9; border:1px solid rgba(16,185,129,0.09); }
         .alert-danger { background:rgba(239,68,68,0.06); color:#ffd6d6; border:1px solid rgba(239,68,68,0.09); }
 
-        .terminal { background:#000814; color:#9fffb3; padding:14px; border-radius:10px; font-family:monospace; font-size:0.9rem; border:1px solid rgba(255,255,255,0.03); }
+    .terminal { background:#000e1a; color:#9fffb3; padding:16px 18px; border-radius:12px; font-family:monospace; font-size:0.9rem; border:1px solid rgba(255,255,255,0.04); box-shadow:inset 0 0 0 1px rgba(255,255,255,0.02); }
         .terminal pre { white-space:pre-wrap; word-break:break-word; margin-top:8px; color:#a7ffc4; }
 
         .sql-editor { background:#041022; border:1px solid rgba(255,255,255,0.03); color:#e6eef8; border-radius:8px; padding:12px; font-family:monospace; min-height:120px; }
@@ -857,11 +863,14 @@ if (!$disabled_funcs) {
     .edit-row { display:none; }
     .edit-row:target { display:block; }
 
+        @media (max-width:1024px) {
+            .container { padding:16px 18px 36px; }
+        }
         @media (max-width:768px) {
-            .container { padding:12px; }
-            .nav-tabs { flex-wrap:wrap; }
+            .container { padding:14px 14px 34px; }
             .header { flex-direction:column; gap:10px; align-items:stretch; }
-            .table th, .table td { padding:8px 10px; font-size:0.9rem; }
+            .table th, .table td { padding:8px 10px; font-size:0.85rem; }
+            .card { padding:16px 16px 18px; }
         }
     </style>
     </head>
