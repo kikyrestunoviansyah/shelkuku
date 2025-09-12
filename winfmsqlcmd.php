@@ -11,17 +11,98 @@ if (!ini_get('date.timezone')) {
 session_start();
 $stored_password_hash = md5("password"); // ganti password
 
-// === MYSQL EXTENSION COMPAT LAYER (place early to avoid undefined function) ===
+// === MYSQL EXTENSION COMPAT LAYER (mysqli first, then PDO fallback) ===
 if (!function_exists('mysql_connect')) {
-    function mysql_connect($host, $user, $pass) { return @mysqli_connect($host, $user, $pass); }
-    function mysql_select_db($dbname, $link=null) { return @mysqli_select_db($link, $dbname); }
-    function mysql_query($query, $link=null) { return @mysqli_query($link, $query); }
-    function mysql_real_escape_string($str, $link=null) { return $link ? mysqli_real_escape_string($link, $str) : addslashes($str); }
-    function mysql_fetch_assoc($result) { return @mysqli_fetch_assoc($result); }
-    function mysql_fetch_row($result) { return @mysqli_fetch_row($result); }
-    function mysql_num_rows($result) { return @mysqli_num_rows($result); }
-    function mysql_insert_id($link=null) { return @mysqli_insert_id($link); }
-    function mysql_close($link=null) { return @mysqli_close($link); }
+    if (function_exists('mysqli_connect')) {
+        // Use mysqli
+        function mysql_connect($host, $user, $pass) { return @mysqli_connect($host, $user, $pass); }
+        function mysql_select_db($dbname, $link=null) { return @mysqli_select_db($link, $dbname); }
+        function mysql_query($query, $link=null) { return @mysqli_query($link, $query); }
+        function mysql_real_escape_string($str, $link=null) { return $link ? mysqli_real_escape_string($link, $str) : addslashes($str); }
+        function mysql_fetch_assoc($result) { return @mysqli_fetch_assoc($result); }
+        function mysql_fetch_row($result) { return @mysqli_fetch_row($result); }
+        function mysql_num_rows($result) { return @mysqli_num_rows($result); }
+        function mysql_insert_id($link=null) { return @mysqli_insert_id($link); }
+        function mysql_close($link=null) { return @mysqli_close($link); }
+    } elseif (class_exists('PDO')) {
+        // PDO emulation
+        class _PDOFakeResult {
+            public $rows = array();
+            public $idx = 0;
+            public function __construct($rows) { $this->rows = $rows; }
+        }
+        $GLOBALS['_pdo_mysql_link'] = null;
+        function mysql_connect($host, $user, $pass) {
+            $dsn = 'mysql:host=' . $host . ';charset=utf8';
+            try {
+                $pdo = new PDO($dsn, $user, $pass, array(PDO::ATTR_ERRMODE=>PDO::ERRMODE_SILENT));
+                $GLOBALS['_pdo_mysql_link'] = $pdo;
+                return $pdo; // return PDO handle
+            } catch (Exception $e) {
+                return false;
+            }
+        }
+        function mysql_select_db($dbname, $link=null) {
+            if ($link instanceof PDO) {
+                try { $link->exec('USE `'.$dbname.'`'); return true; } catch (Exception $e) { return false; }
+            }
+            return false;
+        }
+        function mysql_query($query, $link=null) {
+            if ($link instanceof PDO) {
+                $trim = ltrim($query);
+                $isSelect = (stripos($trim, 'SELECT') === 0 || stripos($trim, 'SHOW ') === 0 || stripos($trim, 'DESCRIBE ') === 0 || stripos($trim, 'EXPLAIN ') === 0);
+                try {
+                    $stmt = $link->query($query);
+                    if ($stmt === false) return false;
+                    if ($isSelect) {
+                        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                        return new _PDOFakeResult($rows);
+                    }
+                    return true;
+                } catch (Exception $e) {
+                    return false;
+                }
+            }
+            return false;
+        }
+        function mysql_real_escape_string($str, $link=null) {
+            if ($link instanceof PDO) return substr($link->quote($str),1,-1);
+            return addslashes($str);
+        }
+        function mysql_fetch_assoc($result) {
+            if ($result instanceof _PDOFakeResult) {
+                if ($result->idx >= count($result->rows)) return false;
+                return $result->rows[$result->idx++];
+            }
+            return false;
+        }
+        function mysql_fetch_row($result) {
+            $assoc = mysql_fetch_assoc($result);
+            if ($assoc === false) return false;
+            return array_values($assoc);
+        }
+        function mysql_num_rows($result) {
+            if ($result instanceof _PDOFakeResult) return count($result->rows);
+            return 0;
+        }
+        function mysql_insert_id($link=null) {
+            if ($link instanceof PDO) return $link->lastInsertId();
+            return 0;
+        }
+        function mysql_close($link=null) { /* PDO closes automatically */ return true; }
+    } else {
+        // Last resort stubs – will force meaningful failure
+        function mysql_connect($h,$u,$p){ return false; }
+        function mysql_select_db($d,$l=null){ return false; }
+        function mysql_query($q,$l=null){ return false; }
+        function mysql_real_escape_string($s,$l=null){ return addslashes($s); }
+        function mysql_fetch_assoc($r){ return false; }
+        function mysql_fetch_row($r){ return false; }
+        function mysql_num_rows($r){ return 0; }
+        function mysql_insert_id($l=null){ return 0; }
+        function mysql_close($l=null){ return true; }
+    }
 }
 
 // === LOGIN ===
