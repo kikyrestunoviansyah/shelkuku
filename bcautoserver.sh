@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Konfigurasi
-TARGET_IP="192.168.1.100"  # Ganti dengan IP client Anda
-TARGET_PORT="2500"         # Port yang Anda dengarkan di client
+TARGET_IP="103.125.43.187"  # Ganti dengan IP client Anda
+TARGET_PORT="2012"         # Port yang Anda dengarkan di client
 RECONNECT_INTERVAL=5       # Interval reconnect (detik)
 
 # Fungsi untuk mendapatkan informasi sistem
